@@ -18,6 +18,8 @@ start(_StartType, _StartArgs) ->
             ok = riak_core_node_watcher_events:add_guarded_handler(udon_node_event_handler, []),
             ok = riak_core_node_watcher:service_up(udon, self()),
 
+%%             ok = riak_core:register([{vnode_module, rts_stat_vnode}]),
+%%             ok = riak_core_node_watcher:service_up(rts_stat, self()),
             [ webmachine_router:add_route(R) || R <- udon_wm:dispatch_table() ],
 
             {ok, Pid};

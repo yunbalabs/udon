@@ -3,51 +3,64 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -export([
-         ping/0,
-         store/2,
-         rename/2,
-         fetch/1
-        ]).
+    ping/0
+%%     store/2,
+%%     rename/2,
+%%     fetch/1
+    , sadd/2, srem/2, smembers/2]).
 
 -ignore_xref([
-              ping/0,
-              store/2,
-              rename/2,
-              fetch/1
+              ping/0
+    , sadd/2, srem/2
+%%               store/2,
+%%               rename/2,
+%%               fetch/1
              ]).
 
 %% Public API
 
+%% @doc Add an item to a set
+sadd({Bucket, Key}, Item) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {sadd, {Bucket, Key}, Item}, {Bucket, Key}),
+    wait_for_reqid(ReqId, ?TIMEOUT).
+
+%% @doc Remove an item to a set
+srem({Bucket, Key}, Item) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {srem, {Bucket, Key}, Item}, {Bucket, Key}),
+    wait_for_reqid(ReqId, ?TIMEOUT).
+
+%% @doc Fetch items in a set
+smembers(Bucket, Key) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {smembers, Bucket, Key}, {Bucket, Key}),
+    wait_for_reqid(ReqId, ?TIMEOUT).
+
 %% @doc Stores a static file at the given path
-store(Path, Data) ->
-    N = 3,
-    W = 3,
-    Timeout = 5000, % millisecs
+store({Bucket, Key}, Value) ->
 
-    PHash = path_to_hash(Path),
-    PRec = #file{ request_path = Path, path_md5 = PHash, csum = erlang:adler32(Data) },
+%%     PHash = path_to_hash(Path),
+%%     PRec = #file{ request_path = Path, path_md5 = PHash, csum = erlang:adler32(Data) },
 
-    {ok, ReqId} = udon_op_fsm:op(N, W, {store, PRec, Data}, ?KEY(PHash)),
-    wait_for_reqid(ReqId, Timeout).
+%%     {ok, ReqId} = udon_op_fsm:op(N, W, {store, PRec, Data}, ?KEY(PHash)),
+
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {store, {Bucket, Key}, Value}, {Bucket, Key}),
+
+    wait_for_reqid(ReqId, ?TIMEOUT).
 
 %% @TODO Handle redirects
 store(redirect, Path, NewPath) ->
-    N = 3,
-    W = 3,
-    Timeout = 5000, % millisecs
-
     PHash = path_to_hash(Path),
 
-    {ok, ReqId} = udon_op_fsm:op(N, W, {redirect, PHash, NewPath}, ?KEY(PHash)),
-    wait_for_reqid(ReqId, Timeout).
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {redirect, PHash, NewPath}, ?KEY(PHash)),
+    wait_for_reqid(ReqId, ?TIMEOUT).
 
 %% @doc Retrieves a static file from the given path
-fetch(Path) ->
-    PHash = path_to_hash(Path),
-    Idx = riak_core_util:chash_key(?KEY(PHash)),
+fetch({Bucket, Key}) ->
+%%     PHash = path_to_hash(Path),
+%%     Idx = riak_core_util:chash_key(?KEY(PHash)),
+    Idx = riak_core_util:chash_key({Bucket, Key}),
     %% TODO: Get a preflist with more than one node
     [{Node, _Type}] = riak_core_apl:get_primary_apl(Idx, 1, udon),
-    riak_core_vnode_master:sync_spawn_command(Node, {fetch, PHash}, udon_vnode_master).
+    riak_core_vnode_master:sync_spawn_command(Node, {fetch, {Bucket, Key}}, udon_vnode_master).
 
 rename(Path, NewPath) ->
     Data = fetch(Path),

@@ -10,3 +10,6 @@ rel/*
 .rebar
 *.swp
 dev/*
+.idea
+priv
+udon.iml

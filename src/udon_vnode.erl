@@ -23,14 +23,17 @@
              start_vnode/1
              ]).
 
--record(state, {partition, basedir="udon_data"}).
+-record(state, {partition, basedir="udon_data", redis_state}).
 
 %% API
 start_vnode(I) ->
     riak_core_vnode_master:get_vnode_pid(I, ?MODULE).
 
 init([Partition]) ->
-    St = #state{ partition=Partition },
+    {ok, RedisState} = redis_backend:start(Partition, <<>>),
+
+    St = #state{ partition=Partition, redis_state = RedisState },
+
     Base = make_base_path(St),
     %% filelib:ensure_dir/1 you make me so sad. You won't make the parents
     %% unless there's a last element which need not exist and will not be
@@ -44,28 +47,72 @@ init([Partition]) ->
 handle_command(ping, _Sender, State) ->
     {reply, {pong, State#state.partition}, State};
 
-handle_command({RequestId, {store, R, Data}}, _Sender, State) ->
-        MetaPath = make_metadata_path(State, R),
-        NewVersion = case filelib:is_regular(MetaPath) of
-                 true -> 
-                     OldMD = get_metadata(State, R),
-                     OldMD#file.version + 1;
-                 false ->
-                      1
-        end,
-        {MetaResult, DataResult, Loc} = store(State, R#file{version=NewVersion}, Data),
-        {reply, {RequestId, {MetaResult, DataResult, Loc}}, State};
+handle_command({RequestId, {sadd, {Bucket, Key}, Item}}, _Sender, State) ->
+    Result = case redis_backend:sadd(Bucket, Key, "_", Item, State#state.redis_state) of
+                 {ok, _} ->
+                     ok;
+                 {error, _, _} ->
+                     error
+             end,
+    {reply, {RequestId, Result}, State};
 
-handle_command({fetch, PHash}, _Sender, State) ->
-    MetaPath = make_metadata_path(State, PHash),
-    Res = case filelib:is_regular(MetaPath) of
-        true ->
-            MD = get_metadata(State, PHash),
-            get_data(State, MD);
-        false ->
-            not_found
+handle_command({RequestId, {srem, {Bucket, Key}, Item}}, _Sender, State) ->
+    Result = case redis_backend:srem(Bucket, Key, "_", Item, State#state.redis_state) of
+                 {ok, _} ->
+                     ok;
+                 {error, _, _} ->
+                     error
+             end,
+    {reply, {RequestId, Result}, State};
+
+handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
+    Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
+                 {ok, _} ->
+                     ok;
+                 {error, _, _} ->
+                     error
+             end,
+    {reply, {RequestId, Result}, State};
+
+handle_command({RequestId, {store, {Bucket, Key}, Value}}, _Sender, State) ->
+%%         MetaPath = make_metadata_path(State, R),
+%%         NewVersion = case filelib:is_regular(MetaPath) of
+%%                  true ->
+%%                      OldMD = get_metadata(State, R),
+%%                      OldMD#file.version + 1;
+%%                  false ->
+%%                       1
+%%         end,
+%%         {MetaResult, DataResult, Loc} = store(State, R#file{version=NewVersion}, Data),
+%%         {reply, {RequestId, {MetaResult, DataResult, Loc}}, State};
+    Result = case redis_backend:put(Bucket, Key, "_", Value, State#state.redis_state) of
+        {ok, _} ->
+            ok;
+        {error, _, _} ->
+            error
     end,
-    {reply, {Res, filename:join([make_base_path(State), make_filename(PHash)])}, State};
+    {reply, {RequestId, {Result, ok, filename:join([Bucket, Key])}}, State};
+
+handle_command({fetch, {Bucket, Key}}, _Sender, State) ->
+    Res = case redis_backend:get(Bucket, Key, State#state.redis_state) of
+              {ok, Value, _} ->
+                  {ok, Value};
+              {error, not_found, _} ->
+                  not_found;
+              {error, Reason, _} ->
+                  {error, Reason}
+          end,
+    {reply, Res, State};
+
+%%     MetaPath = make_metadata_path(State, PHash),
+%%     Res = case filelib:is_regular(MetaPath) of
+%%         true ->
+%%             MD = get_metadata(State, PHash),
+%%             get_data(State, MD);
+%%         false ->
+%%             not_found
+%%     end,
+%%     {reply, {Res, filename:join([make_base_path(State), make_filename(PHash)])}, State};
 
 handle_command(Message, _Sender, State) ->
     ?PRINT({unhandled_command, Message}),
@@ -86,8 +133,9 @@ handle_command(Message, _Sender, State) ->
 %%
 %% The remote node is going to receive the serialized data using 
 %% the `handle_handoff_data/2' function below.
-handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender, State) ->
+handle_handoff_command_old(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender, State) ->
     AllObjects = get_all_objects(State),
+    ?PRINT(AllObjects),
     Base = make_base_path(State),
 
     Do = fun(Object, AccIn) ->
@@ -107,6 +155,10 @@ handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender, State) -
                  AccOut
     end,
     Final = lists:foldl(Do, Acc0, AllObjects),
+    {reply, Final, State}.
+
+handle_handoff_command(FoldReq = ?FOLD_REQ{foldfun=_VisitFun, acc0=_Acc0}, _Sender, State) ->
+    Final = redis_backend:handle_handoff_command(FoldReq, _Sender, State#state.redis_state),
     {reply, Final, State};
 
 handle_handoff_command(Message, _Sender, State) ->
@@ -123,14 +175,23 @@ handoff_finished(_TargetNode, State) ->
     {ok, State}.
 
 handle_handoff_data(Data, State) ->
-    {Meta, Blob} = binary_to_term(Data),
-    R = case Meta#file.csum =:= erlang:adler32(Blob) of
-        true ->
-            Result = store(State, Meta, Blob),
-            ?PRINT(Result),
+%%     {Meta, Blob} = binary_to_term(Data),
+%%     R = case Meta#file.csum =:= erlang:adler32(Blob) of
+%%         true ->
+%%             Result = store(State, Meta, Blob),
+%%             ?PRINT(Result),
+%%             ok;
+%%         false ->
+%%             {error, file_checksum_differs}
+%%     end,
+    {{Bucket, Key}, Val} = binary_to_term(Data),
+    ?PRINT([Bucket, Key, Val]),
+    R = case redis_backend:sadd(Bucket, Key, "_", Val, State#state.redis_state) of
+        {ok, _} ->
             ok;
-        false ->
-            {error, file_checksum_differs}
+        {error, Reason, _} ->
+            {error, Reason}
+
     end,
     {reply, R, State}.
 
@@ -138,11 +199,12 @@ encode_handoff_item(_Key, Data = {_Meta, _File}) ->
     term_to_binary(Data).
 
 is_empty(State) ->
-    Result = case list_dir(State) of
-        [] -> true; 
-        {error, _Reason} -> true;
-        _ -> false
-    end,
+%%     Result = case list_dir(State) of
+%%         [] -> true;
+%%         {error, _Reason} -> true;
+%%         _ -> false
+%%     end,
+    Result = redis_backend:is_empty(State#state.redis_state),
     {Result, State}.
 
 delete(State) ->
@@ -154,7 +216,13 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, State = #state{redis_state = RedisState}) ->
+    if
+        State == undefined ->
+            ignore;
+        true ->
+            redis_backend:stop(RedisState)
+    end,
     ok.
 
 %% Private API
@@ -204,7 +272,10 @@ make_versioned_file_path(State = #state{}, #file{ path_md5 = Hash, version = V} 
 make_base_path(#state{partition = P, basedir = Base}) ->
     filename:join([Base, integer_to_list(P)]).
 
-store(State = #state{}, R = #file{ path_md5 = PHash }, Blob) ->
+store(State = #state{}, R = #file{ request_path = Path, path_md5 = PHash }, Blob) ->
+    ?PRINT([R, Blob]),
+    redis_backend:put("yunba", Path, "_", Blob, State#state.redis_state),
+
     Base = make_base_path(State),
     Res0 = store_meta_file(make_metadata_path(State, R), R),
     Res1 = store_file(make_versioned_file_path(State, R), Blob),
