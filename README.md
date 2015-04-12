@@ -18,9 +18,12 @@ $ make devrel
 ```
 
 Start dev nodes
+```
 $ ./devall.sh start
+```
 
 Create the cluster
+```
 $ . ./alias.sh
 $ u2a join cluster 'udon1@127.0.0.1'
 $ u3a join cluster 'udon1@127.0.0.1'
