@@ -1,3 +1,63 @@
+Yunba Redis Cluster
+==========================
+
+A Redis cluster solution based on [riak_core][0].
+
+Quick Start
+===========
+Clone this project
+```
+git clone https://github.com/TigerZhang/udon.git udon
+```
+
+Compile and play around
+=======================
+```
+$ cd udon
+$ make devrel
+```
+
+Start dev nodes
+$ ./devall.sh start
+
+Create the cluster
+$ . ./alias.sh
+$ u2a join cluster 'udon1@127.0.0.1'
+$ u3a join cluster 'udon1@127.0.0.1'
+$ u4a join cluster 'udon1@127.0.0.1'
+$ u1a cluster plan
+$ u1a cluster commit
+```
+
+Add some datas
+```
+./add_test.erl 10
+```
+
+Check the keys/nodes/vnodes
+```
+$ ./check_keys.py --help
+usage: check_keys.py [-h] --type CHECKTYPE
+
+optional arguments:
+  -h, --help        show this help message and exit
+  --type CHECKTYPE  check types: keys, keys_simple, nodes, vnodes,
+                    key_replica, all
+```
+
+Caution
+======
+1. Just sadd/srem supported
+2. It's just a early demo, not suitable for product.
+
+Todo
+====
+ * Tidy source codes
+ * Monitor redis-server status in vnode
+ * Integrate riak_control
+
+This project is modified based on the source codes of https://github.com/mrallen1/udon. The file based storage is removed.
+
 udon: a distributed static file web server
 =============================
 
