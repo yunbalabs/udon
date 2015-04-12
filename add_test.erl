@@ -15,10 +15,10 @@ bucket_sadd_test(Node, N) ->
     bucket_sadd_test(Node, N-1).
 
 main([N]) ->
-    {ok, Hostname} = inet:gethostname(),
+    {ok, _Hostname} = inet:gethostname(),
     Sname = "udon1",
     Node = list_to_atom(lists:concat([Sname, "@", "127.0.0.1"])),
     io:format("~p~n", [Node]),
     pong = net_adm:ping(Node),
 
-    io:format("route table of uid info: ~p~n", [bucket_sadd_test(Node, list_to_integer(N))]).
+    io:format("~p~n", [bucket_sadd_test(Node, list_to_integer(N))]).
