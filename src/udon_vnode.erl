@@ -67,8 +67,8 @@ handle_command({RequestId, {srem, {Bucket, Key}, Item}}, _Sender, State) ->
 
 handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
-                 {ok, _} ->
-                     ok;
+                 {ok, Value, _} ->
+                     {ok, Value};
                  {error, _, _} ->
                      error
              end,

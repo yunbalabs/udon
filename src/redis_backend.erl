@@ -214,8 +214,8 @@ srem(Bucket, Key, _IndexSpec, Item, #state{storage_scheme = _Scheme, redis_conte
 smembers(Bucket, Key, _IndexSpec, #state{storage_scheme = _Scheme, redis_context = Context} = State) ->
     CombinedKey = [Bucket, <<",">>, Key],
     case hierdis:command(Context, [<<"SMEMBERS">>, CombinedKey]) of
-        {ok, _Response} ->
-            {ok, State};
+        {ok, Value} ->
+            {ok, Value, State};
         {error, Reason} ->
             {error, Reason, State}
     end.
