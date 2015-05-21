@@ -575,7 +575,7 @@ start_redis(Executable, ConfigFile, SocketFile, DataDir) ->
                     Port = erlang:open_port({spawn_executable, [Executable]}, [{args, Args}, {cd, filename:absname(DataDir)}]),
                     receive
                         {'EXIT', Port, normal} ->
-                            wait_for_file(SocketFile, 100, 5);
+                            wait_for_file(SocketFile, 100, 50);
                         {'EXIT', Port, Reason} ->
                             {error, {redis_error, Port, Reason, io:format("Could not start Redis via Erlang port: ~p\n", [Executable])}}
                     end
