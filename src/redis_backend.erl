@@ -287,10 +287,10 @@ handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender,
     FoldFun = fun(Key, AccIn) ->
 %%         {ok, Val} = hierdis:command(Context, ["GET", Key]),
         {ok, Val} = hierdis:command(Context, ["SMEMBERS", Key]),
-        ?PRINT(Val),
+        %% ?PRINT(Val),
         [Bucket, Key1] = binary:split(Key, <<",">>),
         AccOut = VisitFun(Key, {{Bucket, Key1}, Val}, AccIn),
-        ?PRINT(AccOut),
+        %% ?PRINT(AccOut),
         AccOut
         end,
 

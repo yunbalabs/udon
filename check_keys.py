@@ -104,11 +104,11 @@ def main():
         if sockfile.startswith(PRIFIX):
             sockfile_path = SOCKFILEPATH + sockfile
             [node, vnode] = get_node_vnode(sockfile_path)
+            append(VNODES, vnode, node)
+            append(NODE_VNODES, node, vnode)
             for key in get_redis_keys(sockfile_path):
                 append(KEYS, key, [node, vnode])
                 append(KEY_NODES, key, node)
-                append(VNODES, vnode, node)
-                append(NODE_VNODES, node, vnode)
                 append(NODE_KEYS, node, key)
 
     if args.checktype == 'all' or args.checktype == 'keys':
@@ -121,6 +121,7 @@ def main():
         pprint.pprint(NODE_KEYS)
     if args.checktype == 'all' or args.checktype == 'vnodes':
         pprint.pprint(VNODES)
+        print "length of vnodes is %d" %(len(VNODES))
     if args.checktype == 'all' or args.checktype == 'key_replica':
         check_keys_in_vnodes()
 

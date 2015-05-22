@@ -185,7 +185,7 @@ handle_handoff_data(Data, State) ->
 %%             {error, file_checksum_differs}
 %%     end,
     {{Bucket, Key}, Val} = binary_to_term(Data),
-    ?PRINT([Bucket, Key, Val]),
+    %% ?PRINT([Bucket, Key, Val]),
     R = case redis_backend:sadd(Bucket, Key, "_", Val, State#state.redis_state) of
         {ok, _} ->
             ok;
