@@ -2,7 +2,8 @@
 -define(KEY(X), {<<"udon">>, X}).
 
 -define(N, 3).
--define(W, 3).
+-define(W, 2).
+-define(R, 2).
 -define(TIMEOUT, 5000). % millisecs
 
 

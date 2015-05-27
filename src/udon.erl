@@ -31,7 +31,7 @@ srem({Bucket, Key}, Item) ->
 
 %% @doc Fetch items in a set
 smembers(Bucket, Key) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {smembers, Bucket, Key}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?R, {smembers, Bucket, Key}, {Bucket, Key}),
     wait_for_reqid(ReqId, ?TIMEOUT).
 
 %% @doc Stores a static file at the given path
