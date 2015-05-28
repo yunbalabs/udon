@@ -245,7 +245,13 @@ all_values(SocketFile, {Bucket, Key}) ->
             case hierdis:connect_unix(SocketFile) of
                 {ok, RedisContext} ->
                     CombinedKey = [Bucket, <<",">>, Key],
-                    hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]);
+                    case hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]) of
+                        {ok, _Response} ->
+                            {ok, ok};
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                    %hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]);
                 {error, Reason} ->
                     {error, Reason}
             end;
