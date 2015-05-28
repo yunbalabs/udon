@@ -48,7 +48,7 @@
     is_empty/1,
     status/1,
     callback/3, handle_handoff_command/3, sadd/5, srem/5, smembers/4,
-    all_keys/1]).
+    all_keys/1, all_values/2]).
 
 -export([data_size/1]).
 
@@ -224,16 +224,23 @@ smembers(Bucket, Key, _IndexSpec, #state{storage_scheme = _Scheme, redis_context
 all_keys(SocketFile) ->
     case hierdis:connect_unix(SocketFile) of
         {ok, RedisContext} ->
-            K = case hierdis:command(RedisContext, [<<"KEYS">>, <<"*">>]) of
-                    {ok, Response} ->
-                        Response;
-                    {error, Reason} ->
-                        []
-                end,
-            hierdis:command(RedisContext, [<<"SHUTDOWN">>]),
-            K;
-        {error, Reason} ->
+            case hierdis:command(RedisContext, [<<"KEYS">>, <<"*">>]) of
+                {ok, Response} ->
+                    Response;
+                {error, _Reason} ->
+                    []
+            end;
+        {error, _Reason} ->
             []
+    end.
+
+all_values(SocketFile, {Bucket, Key}) ->
+    case hierdis:connect_unix(SocketFile) of
+        {ok, RedisContext} ->
+            CombinedKey = [Bucket, <<",">>, Key],
+            hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]);
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Insert an object into the backend.
