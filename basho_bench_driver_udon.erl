@@ -47,16 +47,16 @@ run(get, KeyGen, _ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
     case rpc:call(State#state.node, udon, smembers, [State#state.idstr, Key]) of
         {ok, [{ok, Value}, {ok, Value2}, {ok, Value3}]} ->
-            CompareFun = fun (A, B) -> A > B end,
-            SortedValue = lists:sort(CompareFun, Value),
-            SortedValue2 = lists:sort(CompareFun, Value2),
-            SortedValue3 = lists:sort(CompareFun, Value3),
-            if
-                SortedValue == SortedValue2 andalso SortedValue2 == SortedValue3 ->
+%%             CompareFun = fun (A, B) -> A > B end,
+%%             SortedValue = lists:sort(CompareFun, Value),
+%%             SortedValue2 = lists:sort(CompareFun, Value2),
+%%             SortedValue3 = lists:sort(CompareFun, Value3),
+%%             if
+%%                 SortedValue == SortedValue2 andalso SortedValue2 == SortedValue3 ->
                     {ok, State};
-                true ->
-                    {error, "not equal", State}
-            end;
+%%                 true ->
+%%                     {error, "not equal", State}
+%%             end;
         Error ->
             {error, Error, State}
     end;
@@ -111,6 +111,24 @@ run(update_handoff, _KeyGen, ValueGen, State) ->
                 ?INFO("update_handoff success ~p \nvalue: ~p\n", [{Bucket, Key1}, Value]);
             Error ->
                 ?INFO("update_handoff failed ~p\n", [Error])
+        end
+    end, Keys),
+    {ok, State};
+
+run(delete_handoff, _KeyGen, ValueGen, State) ->
+    ActivePartitions = get_active_transfers(State),
+    Keys = get_keys_from_availble_redis(ActivePartitions, State),
+    ?INFO("delete_handoff keys num: ~p partitions: ~p\n", [length(Keys), ActivePartitions]),
+    lists:foreach(fun (Key) ->
+        [Bucket, Key1] = binary:split(Key, <<",">>),
+        BucketStr = binary_to_list(Bucket),
+        Key1Str = binary_to_list(Key1),
+        Value = ValueGen(),
+        case rpc:call(State#state.node, udon, srem, [{BucketStr, Key1Str}, Value]) of
+            {ok, [ok, ok]} ->
+                ?INFO("delete_handoff success ~p \nvalue: ~p\n", [{Bucket, Key1}, Value]);
+            Error ->
+                ?INFO("delete_handoff failed ~p\n", [Error])
         end
     end, Keys),
     {ok, State}.
