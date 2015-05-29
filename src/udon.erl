@@ -7,7 +7,7 @@
 %%     store/2,
 %%     rename/2,
 %%     fetch/1
-    , sadd/2, srem/2, smembers/2]).
+    , sadd/2, srem/2, smembers/2, smembers2/2]).
 
 -ignore_xref([
               ping/0
@@ -33,6 +33,48 @@ srem({Bucket, Key}, Item) ->
 smembers(Bucket, Key) ->
     {ok, ReqId} = udon_op_fsm:op(?N, ?R, {smembers, Bucket, Key}, {Bucket, Key}),
     wait_for_reqid(ReqId, ?TIMEOUT).
+
+smembers2(Bucket, Key) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?R, {redis_address}, {Bucket, Key}),
+    case wait_for_reqid(ReqId, ?TIMEOUT) of
+        {ok, RedisAddresses} ->
+            WorkerPid = self(),
+            lists:foreach(fun({ok,{Hostname, Port}}) ->
+                spawn(fun() ->
+                    case hierdis:connect(Hostname, list_to_integer(Port)) of
+                        {ok, RedisContext} ->
+                            CombinedKey = [Bucket, <<",">>, Key],
+                            case hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]) of
+                                {ok, Value} ->
+                                    WorkerPid ! {ok, Value};
+                                {error, Reason} ->
+                                    WorkerPid ! {error, Reason}
+                            end;
+                        {error, Reason} ->
+                            WorkerPid ! {error, Reason}
+                    end
+                end)
+            end, RedisAddresses),
+            case collect_result(length(RedisAddresses), []) of
+                [{ok, Value}, {ok, Value2}, {ok, Value3}] ->
+                    {ok};
+                Error ->
+                    {error, Error}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+collect_result(0, Results) ->
+    Results;
+collect_result(Size, Results) ->
+    receive
+        Result ->
+            collect_result(Size - 1, [Result | Results])
+    after
+        ?TIMEOUT ->
+            collect_result(Size - 1, [{timeout} | Results])
+    end.
 
 %% @doc Stores a static file at the given path
 store({Bucket, Key}, Value) ->

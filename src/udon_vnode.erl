@@ -74,6 +74,11 @@ handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
              end,
     {reply, {RequestId, Result}, State};
 
+handle_command({RequestId, {redis_address}}, _Sender, State) ->
+  {ok, ListenPort, _} = redis_backend:listen_port(State#state.redis_state),
+  HostName = net_adm:localhost(),
+  {reply, {RequestId, {ok, {HostName, ListenPort}}}, State};
+
 handle_command({RequestId, {store, {Bucket, Key}, Value}}, _Sender, State) ->
 %%         MetaPath = make_metadata_path(State, R),
 %%         NewVersion = case filelib:is_regular(MetaPath) of

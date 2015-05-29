@@ -47,7 +47,7 @@
     fold_objects/4,
     is_empty/1,
     status/1,
-    callback/3, handle_handoff_command/3, sadd/5, srem/5, smembers/4,
+    callback/3, handle_handoff_command/3, sadd/5, srem/5, smembers/4, listen_port/1,
     all_keys/1, all_values/2]).
 
 -export([data_size/1]).
@@ -57,6 +57,7 @@
 
 -record(state, {redis_context :: term(),
                 redis_socket_path :: string(),
+                redis_listen_port :: string(),
                 storage_scheme :: atom(),
                 data_dir :: string(),
                 partition :: integer(),
@@ -113,13 +114,14 @@ start(Partition, _Config) ->
                 ok ->
                     case check_redis_install(ExpectedExecutable) of
                         {ok, RedisExecutable} ->
-                            case start_redis(RedisExecutable, ConfigFile, ExpectedSocketFile, DataDir) of
-                                {ok, RedisSocket} ->
+                            case start_redis(Partition, RedisExecutable, ConfigFile, ExpectedSocketFile, DataDir) of
+                                {ok, RedisSocket, ListenPort} ->
                                     case hierdis:connect_unix(RedisSocket) of
                                         {ok, RedisContext} ->
                                             Result = {ok, #state{
                                                 redis_context=RedisContext,
                                                 redis_socket_path=RedisSocket,
+                                                redis_listen_port = ListenPort,
                                                 storage_scheme=Scheme,
                                                 data_dir=DataDir,
                                                 partition=Partition,
@@ -221,6 +223,9 @@ smembers(Bucket, Key, _IndexSpec, #state{storage_scheme = _Scheme, redis_context
             {error, Reason, State}
     end.
 
+listen_port(#state{redis_listen_port = ListenPort} = State) ->
+    {ok, ListenPort, State}.
+
 all_keys(SocketFile) ->
     case file_exists(SocketFile) of
         true ->
@@ -245,13 +250,7 @@ all_values(SocketFile, {Bucket, Key}) ->
             case hierdis:connect_unix(SocketFile) of
                 {ok, RedisContext} ->
                     CombinedKey = [Bucket, <<",">>, Key],
-                    case hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]) of
-                        {ok, _Response} ->
-                            {ok, ok};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
-                    %hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]);
+                    hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]);
                 {error, Reason} ->
                     {error, Reason}
             end;
@@ -603,24 +602,43 @@ check_redis_install(Executable) ->
     end.
 
 %% @private
-start_redis(Executable, ConfigFile, SocketFile, DataDir) ->
+start_redis(Partition, Executable, ConfigFile, SocketFile, DataDir) ->
     case file:change_mode(Executable, 8#00755) of
         ok ->
             case file_exists(SocketFile) of
                 true ->
-                    {ok, SocketFile};
+                    {ok, {listen_port, ListenPort}} = read_redis_config(Partition),
+                    {ok, SocketFile, ListenPort};
                 false ->
-                    Args = [ConfigFile, "--unixsocket", SocketFile, "--daemonize", "yes"],
-                    Port = erlang:open_port({spawn_executable, [Executable]}, [{args, Args}, {cd, filename:absname(DataDir)}]),
-                    receive
-                        {'EXIT', Port, normal} ->
-                            wait_for_file(SocketFile, 100, 50);
-                        {'EXIT', Port, Reason} ->
-                            {error, {redis_error, Port, Reason, io:format("Could not start Redis via Erlang port: ~p\n", [Executable])}}
+                    case try_start_redis(Executable, ConfigFile, SocketFile, DataDir, 50) of
+                        {ok, SocketFile, ListenPort} ->
+                            store_redis_config(Partition, {listen_port, ListenPort}),
+                            {ok, SocketFile, ListenPort};
+                        {error, Reason} ->
+                            {error, Reason}
                     end
             end;
         {error, Reason} ->
             {error, Reason}
+    end.
+
+try_start_redis(Executable, ConfigFile, SocketFile, DataDir, 0) ->
+    {error, {redis_error, "Redis isn't running, all ports are unavailable"}};
+try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes) ->
+    random:seed(now()),
+    ListenPort = integer_to_list(10000 + random:uniform(50000)),
+    Args = [ConfigFile, "--unixsocket", SocketFile, "--daemonize", "yes", "--port", ListenPort],
+    Port = erlang:open_port({spawn_executable, [Executable]}, [{args, Args}, {cd, filename:absname(DataDir)}]),
+    receive
+        {'EXIT', Port, normal} ->
+            case wait_for_file(SocketFile, 100, 50) of
+                {ok, File} ->
+                    {ok, File, ListenPort};
+                Error ->
+                    try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes - 1)
+            end;
+        {'EXIT', Port, Reason} ->
+            {error, {redis_error, Port, Reason, io:format("Could not start Redis via Erlang port: ~p\n", [Executable])}}
     end.
 
 %% @private
@@ -635,3 +653,28 @@ wait_for_file(File, Msec, Attempts) when Attempts > 0 ->
 wait_for_file(File, _Msec, Attempts) when Attempts =< 0 ->
     {error, {redis_error, "Redis isn't running, couldn't find: ~p\n", [File]}}.
 
+read_redis_config(Partition) ->
+    case ets:file2tab("redis_config.dat") of
+        {ok, Tab} ->
+            Ret = case ets:lookup(Tab, Partition) of
+                [{_, Config}] ->
+                    {ok, Config};
+                [] ->
+                    {error, not_found}
+            end,
+            ets:delete(Tab),
+            Ret;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+store_redis_config(Partition, Config) ->
+    Tab2 = case ets:file2tab("redis_config.dat") of
+        {ok, Tab} ->
+            Tab;
+        {error, Reason} ->
+            ets:new(redis_config_table, [])
+    end,
+    ets:insert(Tab2, {Partition, Config}),
+    ets:tab2file(Tab2, "redis_config.dat"),
+    ets:delete(Tab2).
