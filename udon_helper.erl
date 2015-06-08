@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -name udon_helper@127.0.0.1 -setcookie udon -pz deps/getopt/ebin
+%%! -smp enable -sname udon_helper -setcookie udon -pz deps/getopt/ebin
 
 -include("src/udon.hrl").
 
@@ -11,6 +11,7 @@ option_spec_list() ->
     {location, $l, "location", string, "location of the bucket,key"},
     {set, $s, "set", string, "set value of the bucket,key"},
     {get, $g, "get", string, "get value of the bucket,key"},
+    {exist, $e, "exist", string, "Returns true if value exists in the set of bucket,key"},
     {remove, $r, "remove", string, "remove value of the bucket,key"},
     {handoff, $f, "handoff", undefined, "handoff status of the node"}
   ].
@@ -42,6 +43,7 @@ do(Options) ->
   LocationTuple = lists:keyfind(location, 1, Options),
   SetTuple = lists:keyfind(set, 1, Options),
   GetTuple = lists:keyfind(get, 1, Options),
+  ExistTuple = lists:keyfind(exist, 1, Options),
   RemoveTuple = lists:keyfind(remove, 1, Options),
   Handoff = lists:any(fun(E) -> E  =:= handoff end, Options),
   if
@@ -57,6 +59,10 @@ do(Options) ->
       {get, BucketKey} = GetTuple,
       [Bucket, Key] = string:tokens(BucketKey, ","),
       get_value(Node, Bucket, Key);
+    ExistTuple =/= false ->
+      {exist, BucketKeyValue} = ExistTuple,
+      [Bucket, Key, Value] = string:tokens(BucketKeyValue, ","),
+      exist_value(Node, Bucket, Key, Value);
     RemoveTuple =/= false ->
       {remove, BucketKeyValue} = RemoveTuple,
       [Bucket, Key, Value] = string:tokens(BucketKeyValue, ","),
@@ -75,6 +81,11 @@ set_value(Node, Bucket, Key, Value) ->
 
 get_value(Node, Bucket, Key) ->
   io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, smembers, [Bucket, Key])]).
+
+exist_value(Node, Bucket, Key, Value) ->
+  ValueBin = list_to_binary(Value),
+  {ok,[{ok, Values} | _ ]} = rpc:call(Node, udon, smembers, [Bucket, Key]),
+  io:format("~p~n", [lists:any(fun(E) -> E =:= ValueBin end, Values)]).
 
 remove_value(Node, Bucket, Key, Value) ->
   ValueBin = list_to_binary(Value),

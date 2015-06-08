@@ -14,6 +14,8 @@
          handoff_starting/2,
          handoff_cancelled/1,
          handoff_finished/2,
+         handoff_receive_start/1,
+         handoff_receive_finish/1,
          handle_handoff_data/2,
          encode_handoff_item/2,
          handle_coverage/4,
@@ -23,7 +25,7 @@
              start_vnode/1
              ]).
 
--record(state, {partition, basedir="udon_data", redis_state}).
+-record(state, {partition, basedir="udon_data", redis_state, handoff_receive=false, handoff_receive_queue}).
 
 %% API
 start_vnode(I) ->
@@ -31,8 +33,9 @@ start_vnode(I) ->
 
 init([Partition]) ->
     {ok, RedisState} = redis_backend:start(Partition, <<>>),
+    Queue = queue:new(),
 
-    St = #state{ partition=Partition, redis_state = RedisState },
+    St = #state{ partition=Partition, redis_state = RedisState, handoff_receive_queue = Queue},
 
     Base = make_base_path(St),
     %% filelib:ensure_dir/1 you make me so sad. You won't make the parents
@@ -47,6 +50,11 @@ init([Partition]) ->
 handle_command(ping, _Sender, State) ->
     {reply, {pong, State#state.partition}, State};
 
+handle_command(Req={RequestId, {sadd, {_Bucket, _Key}, _Item}}, Sender, State=#state{
+    handoff_receive=true, handoff_receive_queue=Queue
+}) ->
+    Queue2 = queue:in({Req, Sender}, Queue),
+    {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {sadd, {Bucket, Key}, Item}}, _Sender, State) ->
     Result = case redis_backend:sadd(Bucket, Key, "_", Item, State#state.redis_state) of
                  {ok, _} ->
@@ -56,6 +64,11 @@ handle_command({RequestId, {sadd, {Bucket, Key}, Item}}, _Sender, State) ->
              end,
     {reply, {RequestId, Result}, State};
 
+handle_command(Req={RequestId, {srem, {_Bucket, _Key}, _Item}}, Sender, State=#state{
+    handoff_receive=true, handoff_receive_queue=Queue
+}) ->
+    Queue2 = queue:in({Req, Sender}, Queue),
+    {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {srem, {Bucket, Key}, Item}}, _Sender, State) ->
     Result = case redis_backend:srem(Bucket, Key, "_", Item, State#state.redis_state) of
                  {ok, _} ->
@@ -75,28 +88,23 @@ handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     {reply, {RequestId, Result}, State};
 
 handle_command({RequestId, {redis_address}}, _Sender, State) ->
-  {ok, ListenPort, _} = redis_backend:listen_port(State#state.redis_state),
-  HostName = net_adm:localhost(),
-  {reply, {RequestId, {ok, {HostName, ListenPort}}}, State};
+    {ok, ListenPort, _} = redis_backend:listen_port(State#state.redis_state),
+    HostName = net_adm:localhost(),
+    {reply, {RequestId, {ok, {HostName, ListenPort}}}, State};
 
+handle_command(Req={RequestId, {store, {_Bucket, _Key}, _Value}}, Sender, State=#state{
+    handoff_receive=true, handoff_receive_queue=Queue
+}) ->
+    Queue2 = queue:in({Req, Sender}, Queue),
+    {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {store, {Bucket, Key}, Value}}, _Sender, State) ->
-%%         MetaPath = make_metadata_path(State, R),
-%%         NewVersion = case filelib:is_regular(MetaPath) of
-%%                  true ->
-%%                      OldMD = get_metadata(State, R),
-%%                      OldMD#file.version + 1;
-%%                  false ->
-%%                       1
-%%         end,
-%%         {MetaResult, DataResult, Loc} = store(State, R#file{version=NewVersion}, Data),
-%%         {reply, {RequestId, {MetaResult, DataResult, Loc}}, State};
     Result = case redis_backend:put(Bucket, Key, "_", Value, State#state.redis_state) of
         {ok, _} ->
             ok;
         {error, _, _} ->
             error
     end,
-    {reply, {RequestId, {Result, ok, filename:join([Bucket, Key])}}, State};
+    {reply, {RequestId, Result}, State};
 
 handle_command({fetch, {Bucket, Key}}, _Sender, State) ->
     Res = case redis_backend:get(Bucket, Key, State#state.redis_state) of
@@ -138,37 +146,21 @@ handle_command(Message, _Sender, State) ->
 %%
 %% The remote node is going to receive the serialized data using 
 %% the `handle_handoff_data/2' function below.
-handle_handoff_command_old(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender, State) ->
-    AllObjects = get_all_objects(State),
-    ?PRINT(AllObjects),
-    Base = make_base_path(State),
-
-    Do = fun(Object, AccIn) ->
-                 MPath = path_from_object(Base, Object, ".meta"),
-                 ?PRINT(MPath),
-                 Meta = get_metadata(MPath),
-                 ?PRINT(Meta),
-                 %% TODO: Get all file versions
-                 {ok, LatestFile} = get_data(State, Meta),
-                 ?PRINT(LatestFile),
-                 %% This VisitFun expects a {Bucket, Key} pair
-                 %% but we don't have "buckets" in our application
-                 %% So we will just use our KEY macro from udon.hrl
-                 %% and ignore it in the encoding.
-                 AccOut = VisitFun(?KEY(Meta#file.path_md5), {Meta, LatestFile}, AccIn),
-                 ?PRINT(AccOut),
-                 AccOut
-    end,
-    Final = lists:foldl(Do, Acc0, AllObjects),
-    {reply, Final, State}.
-
 handle_handoff_command(FoldReq = ?FOLD_REQ{foldfun=_VisitFun, acc0=_Acc0}, _Sender, State) ->
     Final = redis_backend:handle_handoff_command(FoldReq, _Sender, State#state.redis_state),
     {reply, Final, State};
 
-handle_handoff_command(Message, _Sender, State) ->
-    ?PRINT({unhandled_handoff_command, Message}),
-    {noreply, State}.
+handle_handoff_command(Req={RequestId, {sadd, {_Bucket, _Key}, _Item}}, Sender, State) ->
+    {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
+    {forward, State};
+handle_handoff_command(Req={RequestId, {srem, {_Bucket, _Key}, _Item}}, Sender, State) ->
+    {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
+    {forward, State};
+handle_handoff_command(Req={RequestId, {store, {_Bucket, _Key}, _Value}}, Sender, State) ->
+    {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
+    {forward, State};
+handle_handoff_command(Req, Sender, State) ->
+    handle_command(Req, Sender, State).
 
 handoff_starting(_TargetNode, State) ->
     {true, State}.
@@ -178,6 +170,18 @@ handoff_cancelled(State) ->
 
 handoff_finished(_TargetNode, State) ->
     {ok, State}.
+
+handoff_receive_start(State) ->
+    State#state{handoff_receive=true}.
+
+handoff_receive_finish(State=#state{handoff_receive_queue=Queue}) ->
+    State2 = State#state{handoff_receive=false},
+    ?PRINT([handoff_receive, queue:len(Queue)]),
+    Queue2 = queue:filter(fun ({Req, Sender}) ->    %% Req: sadd, srem, store
+        {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State2),
+        false
+    end, Queue),
+    State#state{handoff_receive=false, handoff_receive_queue=Queue2}.
 
 handle_handoff_data(Data, State) ->
 %%     {Meta, Blob} = binary_to_term(Data),
