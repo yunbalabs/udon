@@ -127,7 +127,7 @@ start(Partition, _Config) ->
                                                 partition=Partition,
                                                 root=DataRoot
                                             }},
-                                            io:format("Started redis backend for partition: ~p\n", [Partition]),
+                                            lager:info("Started redis backend for partition: ~p\n", [Partition]),
                                             Result;
                                         {error, Reason} -> {error, Reason}
                                     end;
@@ -262,7 +262,6 @@ all_values(SocketFile, {Bucket, Key}) ->
 %% -type index_spec() :: {add, Index, SecondaryKey} | {remove, Index, SecondaryKey}.
 -spec put(riak_object:bucket(), riak_object:key(), [index_spec()], binary(), state()) -> {ok, state()} | {error, term(), state()}.
 put(Bucket, Key, _IndexSpec, Value, #state{storage_scheme=Scheme}=State) ->
-    ?PRINT([Key, Value]),
     put(Scheme, Bucket, Key, _IndexSpec, Value, State).
 
 %% @private
@@ -323,13 +322,9 @@ handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender,
     #state{ redis_context = Context } = State) ->
 
     FoldFun = fun(Key, AccIn) ->
-%%         {ok, Val} = hierdis:command(Context, ["GET", Key]),
         {ok, Val} = hierdis:command(Context, ["SMEMBERS", Key]),
-        %% ?PRINT(Val),
         [Bucket, Key1] = binary:split(Key, <<",">>),
-        AccOut = VisitFun(Key, {{Bucket, Key1}, Val}, AccIn),
-        %% ?PRINT(AccOut),
-        AccOut
+        VisitFun(Key, {{Bucket, Key1}, Val}, AccIn)
         end,
 
     case hierdis:command(Context, [<<"KEYS">>, <<"*">>]) of
@@ -339,30 +334,6 @@ handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender,
         {error, Reason} ->
             {error, Reason, State}
     end.
-
-%%     AllObjects = get_all_objects(State),
-%%
-%%     ?PRINT(AllObjects),
-%%     Base = make_base_path(State),
-%%
-%%     Do = fun(Object, AccIn) ->
-%%         MPath = path_from_object(Base, Object, ".meta"),
-%%         ?PRINT(MPath),
-%%         Meta = get_metadata(MPath),
-%%         ?PRINT(Meta),
-%%         %% TODO: Get all file versions
-%%         {ok, LatestFile} = get_data(State, Meta),
-%%         ?PRINT(LatestFile),
-%%         %% This VisitFun expects a {Bucket, Key} pair
-%%         %% but we don't have "buckets" in our application
-%%         %% So we will just use our KEY macro from udon.hrl
-%%         %% and ignore it in the encoding.
-%%         AccOut = VisitFun(?KEY(Meta#file.path_md5), {Meta, LatestFile}, AccIn),
-%%         ?PRINT(AccOut),
-%%         AccOut
-%%     end,
-%%     Final = lists:foldl(Do, Acc0, AllObjects),
-%%     {reply, Final, State}.
 
 %% @doc Fold over all the buckets
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(), any(), [], state()) -> {ok, any()} | {async, fun()}.
@@ -558,6 +529,8 @@ is_empty(#state{redis_context=Context}=State) ->
             true;
         {ok, _} ->
             false;
+        {error, {redis_err_io, _}} ->   %% redis has shutdown
+            true;
         {error, Reason} ->
             {error, Reason, State}
     end.
@@ -622,8 +595,8 @@ start_redis(Partition, Executable, ConfigFile, SocketFile, DataDir) ->
             {error, Reason}
     end.
 
-try_start_redis(Executable, ConfigFile, SocketFile, DataDir, 0) ->
-    {error, {redis_error, "Redis isn't running, all ports are unavailable"}};
+try_start_redis(_Executable, _ConfigFile, _SocketFile, _DataDir, 0) ->
+    {error, {redis_error, "Redis can't start, all ports are unavailable"}};
 try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes) ->
     random:seed(now()),
     ListenPort = integer_to_list(10000 + random:uniform(50000)),
@@ -634,7 +607,7 @@ try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes) ->
             case wait_for_file(SocketFile, 100, 50) of
                 {ok, File} ->
                     {ok, File, ListenPort};
-                Error ->
+                _Error ->
                     try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes - 1)
             end;
         {'EXIT', Port, Reason} ->
