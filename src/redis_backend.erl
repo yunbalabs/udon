@@ -118,17 +118,22 @@ start(Partition, _Config) ->
                                 {ok, RedisSocket, ListenPort} ->
                                     case hierdis:connect_unix(RedisSocket) of
                                         {ok, RedisContext} ->
-                                            Result = {ok, #state{
-                                                redis_context=RedisContext,
-                                                redis_socket_path=RedisSocket,
-                                                redis_listen_port = ListenPort,
-                                                storage_scheme=Scheme,
-                                                data_dir=DataDir,
-                                                partition=Partition,
-                                                root=DataRoot
-                                            }},
-                                            lager:info("Started redis backend for partition: ~p\n", [Partition]),
-                                            Result;
+                                            case wait_for_redis_loaded(RedisContext, 100, 500) of
+                                                ok ->
+                                                    Result = {ok, #state{
+                                                        redis_context=RedisContext,
+                                                        redis_socket_path=RedisSocket,
+                                                        redis_listen_port = ListenPort,
+                                                        storage_scheme=Scheme,
+                                                        data_dir=DataDir,
+                                                        partition=Partition,
+                                                        root=DataRoot
+                                                    }},
+                                                    lager:info("Started redis backend for partition: ~p\n", [Partition]),
+                                                    Result;
+                                                timeout ->
+                                                    {error, wait_for_redis_loaded_timeout}
+                                            end;
                                         {error, Reason} -> {error, Reason}
                                     end;
                                 {error, Reason} -> {error, Reason}
@@ -625,6 +630,17 @@ wait_for_file(File, Msec, Attempts) when Attempts > 0 ->
     end;
 wait_for_file(File, _Msec, Attempts) when Attempts =< 0 ->
     {error, {redis_error, "Redis isn't running, couldn't find: ~p\n", [File]}}.
+
+wait_for_redis_loaded(_RedisContext, _Msec, 0) ->
+    timeout;
+wait_for_redis_loaded(RedisContext, Msec, Attempts) ->
+    case hierdis:command(RedisContext, ["PING"]) of
+        {ok, <<"PONG">>} ->
+            ok;
+        _ ->
+            timer:sleep(Msec),
+            wait_for_redis_loaded(RedisContext, Msec, Attempts-1)
+    end.
 
 read_redis_config(Partition) ->
     case ets:file2tab("redis_config.dat") of
