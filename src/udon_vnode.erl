@@ -157,6 +157,7 @@ handoff_cancelled(State) ->
     {ok, State}.
 
 handoff_finished(_TargetNode, State) ->
+    redis_backend:drop(State#state.redis_state),
     {ok, State}.
 
 handoff_receive_start(State) ->
