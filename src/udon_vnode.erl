@@ -199,11 +199,8 @@ handle_coverage(_Req, _KeySpaces, _Sender, State) ->
 handle_exit(_Pid, _Reason, State) ->
     {noreply, State}.
 
+terminate(_Reason, undefined) ->
+    ok;
 terminate(_Reason, State = #state{redis_state = RedisState}) ->
-    if
-        State == undefined ->
-            ignore;
-        true ->
-            redis_backend:stop(RedisState)
-    end,
+    redis_backend:stop(RedisState),
     ok.
