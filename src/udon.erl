@@ -7,7 +7,7 @@
 %%     store/2,
 %%     rename/2,
 %%     fetch/1
-    , sadd/2, srem/2, smembers/2, smembers2/2]).
+    , sadd/2, srem/2, transaction/2, smembers/2, smembers2/2]).
 
 -ignore_xref([
               ping/0
@@ -27,6 +27,10 @@ sadd({Bucket, Key}, Item) ->
 %% @doc Remove an item to a set
 srem({Bucket, Key}, Item) ->
     {ok, ReqId} = udon_op_fsm:op(?N, ?W, {srem, {Bucket, Key}, Item}, {Bucket, Key}),
+    wait_for_reqid(ReqId, ?TIMEOUT).
+
+transaction({Bucket, Key}, CommandList) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {transaction, {Bucket, Key}, CommandList}, {Bucket, Key}),
     wait_for_reqid(ReqId, ?TIMEOUT).
 
 %% @doc Fetch items in a set

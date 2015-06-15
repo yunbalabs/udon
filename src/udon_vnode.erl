@@ -76,6 +76,20 @@ handle_command({RequestId, {srem, {Bucket, Key}, Item}}, _Sender, State) ->
              end,
     {reply, {RequestId, Result}, State};
 
+handle_command(Req={RequestId, {transaction, {_Bucket, _Key}, CommandList}}, Sender, State=#state{
+  handoff_receive=true, handoff_receive_queue=Queue
+}) when is_list(CommandList) ->
+  Queue2 = queue:in({Req, Sender}, Queue),
+  {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
+handle_command({RequestId, {transaction, {_Bucket, _Key}, CommandList}}, _Sender, State) when is_list(CommandList) ->
+  Result = case redis_backend:transaction(CommandList, State#state.redis_state) of
+             {ok, _} ->
+               ok;
+             {error, _, _} ->
+               error
+           end,
+  {reply, {RequestId, Result}, State};
+
 handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
                  {ok, Value, _} ->
@@ -166,7 +180,7 @@ handoff_receive_start(State) ->
 handoff_receive_finish(State=#state{handoff_receive_queue=Queue}) ->
     State2 = State#state{handoff_receive=false},
     lager:debug("handoff_receive queue len: ~p", [queue:len(Queue)]),
-    Queue2 = queue:filter(fun ({Req, Sender}) ->    %% Req: sadd, srem, store
+    Queue2 = queue:filter(fun ({Req, Sender}) ->    %% Req: sadd, srem, store, transaction
         {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State2),
         false
     end, Queue),

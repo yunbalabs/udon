@@ -47,8 +47,8 @@
     fold_objects/4,
     is_empty/1,
     status/1,
-    callback/3, handle_handoff_command/3, sadd/5, srem/5, smembers/4, listen_port/1,
-    all_keys/1, all_values/2]).
+    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, smembers/4, listen_port/1,
+    all_keys/1, all_values/2, get_combined_key/1]).
 
 -export([data_size/1]).
 
@@ -213,6 +213,14 @@ sadd(Bucket, Key, _IndexSpec, Item, #state{storage_scheme = _Scheme, redis_conte
 srem(Bucket, Key, _IndexSpec, Item, #state{storage_scheme = _Scheme, redis_context = Context} = State) ->
     CombinedKey = [Bucket, <<",">>, Key],
     case hierdis:command(Context, [<<"SREM">>, CombinedKey, Item]) of
+        {ok, _Response} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+transaction(CommandList, #state{storage_scheme = _Scheme, redis_context = Context} = State) ->
+    case hierdis:transaction(Context, CommandList) of
         {ok, _Response} ->
             {ok, State};
         {error, Reason} ->
@@ -667,3 +675,6 @@ store_redis_config(Partition, Config) ->
     ets:insert(Tab2, {Partition, Config}),
     ets:tab2file(Tab2, "redis_config.dat"),
     ets:delete(Tab2).
+
+get_combined_key({Bucket, Key}) ->
+    [Bucket, <<",">>, Key].
