@@ -161,6 +161,9 @@ handle_handoff_command(Req={_RequestId, {srem, {_Bucket, _Key}, _Item}}, Sender,
 handle_handoff_command(Req={_RequestId, {store, {_Bucket, _Key}, _Value}}, Sender, State) ->
     {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
     {forward, State};
+handle_handoff_command(Req={_RequestId, {transaction, {_Bucket, _Key}, _CommandList}}, Sender, State) ->
+    {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
+    {forward, State};
 handle_handoff_command(Req, Sender, State) ->
     handle_command(Req, Sender, State).
 
@@ -215,6 +218,6 @@ handle_exit(_Pid, _Reason, State) ->
 
 terminate(_Reason, undefined) ->
     ok;
-terminate(_Reason, State = #state{redis_state = RedisState}) ->
+terminate(_Reason, #state{redis_state = RedisState}) ->
     redis_backend:stop(RedisState),
     ok.
