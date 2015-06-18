@@ -77,18 +77,18 @@ handle_command({RequestId, {srem, {Bucket, Key}, Item}}, _Sender, State) ->
     {reply, {RequestId, Result}, State};
 
 handle_command(Req={RequestId, {transaction, {_Bucket, _Key}, CommandList}}, Sender, State=#state{
-  handoff_receive=true, handoff_receive_queue=Queue
+    handoff_receive=true, handoff_receive_queue=Queue
 }) when is_list(CommandList) ->
-  Queue2 = queue:in({Req, Sender}, Queue),
-  {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
+    Queue2 = queue:in({Req, Sender}, Queue),
+    {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {transaction, {_Bucket, _Key}, CommandList}}, _Sender, State) when is_list(CommandList) ->
-  Result = case redis_backend:transaction(CommandList, State#state.redis_state) of
-             {ok, _} ->
-               ok;
-             {error, _, _} ->
-               error
-           end,
-  {reply, {RequestId, Result}, State};
+    Result = case redis_backend:transaction(CommandList, State#state.redis_state) of
+               {ok, _} ->
+                   ok;
+               {error, _, _} ->
+                   error
+             end,
+    {reply, {RequestId, Result}, State};
 
 handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
@@ -96,6 +96,20 @@ handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
                      {ok, Value};
                  {error, _, _} ->
                      error
+             end,
+    {reply, {RequestId, Result}, State};
+
+handle_command(Req={RequestId, {del, _Bucket, _Key}}, Sender, State=#state{
+    handoff_receive=true, handoff_receive_queue=Queue
+}) ->
+    Queue2 = queue:in({Req, Sender}, Queue),
+    {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
+handle_command({RequestId, {del, Bucket, Key}}, _Sender, State) ->
+    Result = case redis_backend:del(Bucket, Key, State#state.redis_state) of
+               {ok, _} ->
+                   ok;
+               {error, _, _} ->
+                   error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -164,6 +178,9 @@ handle_handoff_command(Req={_RequestId, {store, {_Bucket, _Key}, _Value}}, Sende
 handle_handoff_command(Req={_RequestId, {transaction, {_Bucket, _Key}, _CommandList}}, Sender, State) ->
     {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
     {forward, State};
+handle_handoff_command(Req={_RequestId, {del, _Bucket, _Key}}, Sender, State) ->
+    {reply, {_RequestId, ok}, _State} = handle_command(Req, Sender, State),
+    {forward, State};
 handle_handoff_command(Req, Sender, State) ->
     handle_command(Req, Sender, State).
 
@@ -196,7 +213,6 @@ handle_handoff_data(Data, State) ->
             ok;
         {error, Reason, _} ->
             {error, Reason}
-
     end,
     {reply, R, State}.
 

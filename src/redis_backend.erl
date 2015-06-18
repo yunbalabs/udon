@@ -47,7 +47,7 @@
     fold_objects/4,
     is_empty/1,
     status/1,
-    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, smembers/4, listen_port/1,
+    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, smembers/4, del/3, listen_port/1,
     all_keys/1, all_values/2, get_combined_key/1]).
 
 -export([data_size/1]).
@@ -232,6 +232,15 @@ smembers(Bucket, Key, _IndexSpec, #state{storage_scheme = _Scheme, redis_context
     case hierdis:command(Context, [<<"SMEMBERS">>, CombinedKey]) of
         {ok, Value} ->
             {ok, Value, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+del(Bucket, Key, #state{storage_scheme = _Scheme, redis_context = Context} = State) ->
+    CombinedKey = [Bucket, <<",">>, Key],
+    case hierdis:command(Context, [<<"DEL">>, CombinedKey]) of
+        {ok, _Response} ->
+            {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end.
@@ -669,7 +678,7 @@ store_redis_config(Partition, Config) ->
     Tab2 = case ets:file2tab("redis_config.dat") of
         {ok, Tab} ->
             Tab;
-        {error, Reason} ->
+        {error, _Reason} ->
             ets:new(redis_config_table, [])
     end,
     ets:insert(Tab2, {Partition, Config}),

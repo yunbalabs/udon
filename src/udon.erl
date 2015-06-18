@@ -2,41 +2,76 @@
 -include("udon.hrl").
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
--export([
-    ping/0
-%%     store/2,
-%%     rename/2,
-%%     fetch/1
-    , sadd/2, srem/2, transaction/2, smembers/2, smembers2/2]).
+-compile([{parse_transform, lager_transform}]).
 
--ignore_xref([
-              ping/0
-    , sadd/2, srem/2
-%%               store/2,
-%%               rename/2,
-%%               fetch/1
-             ]).
+-export([sadd/2, sadd_with_ttl/3, srem/2, smembers/2, del/2, smembers2/2]).
+
+-ignore_xref([sadd/2, sadd_with_ttl/3, srem/2, smembers/2, del/2, smembers2/2]).
 
 %% Public API
 
 %% @doc Add an item to a set
 sadd({Bucket, Key}, Item) ->
     {ok, ReqId} = udon_op_fsm:op(?N, ?W, {sadd, {Bucket, Key}, Item}, {Bucket, Key}),
-    wait_for_reqid(ReqId, ?TIMEOUT).
+    case wait_for_reqid(ReqId, ?TIMEOUT) of
+        {ok, [ok, ok]} ->
+            jiffy:encode({[{<<"status">>, 0}]});
+        Error ->
+            handle_error(sadd, [{Bucket, Key}, Item], Error)
+    end;
+sadd(_, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
+
+sadd_with_ttl({Bucket, Key}, Item, [{"ttl", TTL}]) ->
+    CombinedKey = redis_backend:get_combined_key({Bucket, Key}),
+    case transaction({Bucket, Key}, [
+        [<<"SADD">>, CombinedKey, Item],
+        [<<"EXPIRE">>, CombinedKey, TTL]
+    ]) of
+        {ok, [ok, ok]} ->
+            jiffy:encode({[{<<"status">>, 0}]});
+        Error ->
+            handle_error(sadd, [{Bucket, Key}, Item], Error)
+    end;
+sadd_with_ttl(_, _, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
 %% @doc Remove an item to a set
 srem({Bucket, Key}, Item) ->
     {ok, ReqId} = udon_op_fsm:op(?N, ?W, {srem, {Bucket, Key}, Item}, {Bucket, Key}),
-    wait_for_reqid(ReqId, ?TIMEOUT).
+    case wait_for_reqid(ReqId, ?TIMEOUT) of
+        {ok, [ok, ok]} ->
+            jiffy:encode({[{<<"status">>, 0}]});
+        Error ->
+            handle_error(srem, [{Bucket, Key}, Item], Error)
+    end;
+srem(_, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
-transaction({Bucket, Key}, CommandList) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {transaction, {Bucket, Key}, CommandList}, {Bucket, Key}),
-    wait_for_reqid(ReqId, ?TIMEOUT).
+%% @doc Delete a set
+del(Bucket, Key) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {del, Bucket, Key}, {Bucket, Key}),
+    case wait_for_reqid(ReqId, ?TIMEOUT) of
+        {ok, [ok, ok]} ->
+            jiffy:encode({[{<<"status">>, 0}]});
+        Error ->
+            handle_error(srem, [Bucket, Key], Error)
+    end;
+del(_, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
 %% @doc Fetch items in a set
 smembers(Bucket, Key) ->
     {ok, ReqId} = udon_op_fsm:op(?N, ?R, {smembers, Bucket, Key}, {Bucket, Key}),
-    wait_for_reqid(ReqId, ?TIMEOUT).
+    case wait_for_reqid(ReqId, ?TIMEOUT) of
+        {ok, [{ok, Data1}, {ok, Data2}, {ok, Data3}]} ->
+            Data = lists_union([Data1, Data2, Data3]),
+            jiffy:encode({[{<<"status">>, 0}, {<<"data">>, Data}]});
+        Error ->
+            handle_error(smembers, [Bucket, Key], Error)
+    end;
+smembers(_, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
 smembers2(Bucket, Key) ->
     {ok, ReqId} = udon_op_fsm:op(?N, ?R, {redis_address}, {Bucket, Key}),
@@ -45,29 +80,37 @@ smembers2(Bucket, Key) ->
             WorkerPid = self(),
             lists:foreach(fun({ok,{Hostname, Port}}) ->
                 spawn(fun() ->
-                    case hierdis:connect(Hostname, list_to_integer(Port)) of
+                    case eredis:start_link(Hostname, list_to_integer(Port)) of
                         {ok, RedisContext} ->
                             CombinedKey = [Bucket, <<",">>, Key],
-                            case hierdis:command(RedisContext, [<<"SMEMBERS">>, CombinedKey]) of
+                            case eredis:q(RedisContext, [<<"SMEMBERS">>, CombinedKey]) of
                                 {ok, Value} ->
                                     WorkerPid ! {ok, Value};
                                 {error, Reason} ->
                                     WorkerPid ! {error, Reason}
-                            end;
+                            end,
+                            eredis:stop(RedisContext);
                         {error, Reason} ->
                             WorkerPid ! {error, Reason}
                     end
                 end)
             end, RedisAddresses),
             case collect_result(length(RedisAddresses), []) of
-                [{ok, Value}, {ok, Value2}, {ok, Value3}] ->
-                    {ok};
+                [{ok, Data1}, {ok, Data2}, {ok, Data3}] ->
+                    Data = lists_union([Data1, Data2, Data3]),
+                    jiffy:encode({[{<<"status">>, 0}, {<<"data">>, Data}]});
                 Error ->
-                    {error, Error}
+                    handle_error(smembers2, [Bucket, Key], Error)
             end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
+        Error ->
+            handle_error(smembers2, [Bucket, Key], Error)
+    end;
+smembers2(_, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
+
+transaction({Bucket, Key}, CommandList) ->
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {transaction, {Bucket, Key}, CommandList}, {Bucket, Key}),
+    wait_for_reqid(ReqId, ?TIMEOUT).
 
 collect_result(0, Results) ->
     Results;
@@ -80,51 +123,27 @@ collect_result(Size, Results) ->
             collect_result(Size - 1, [{timeout} | Results])
     end.
 
-%% @doc Stores a static file at the given path
-store({Bucket, Key}, Value) ->
-
-%%     PHash = path_to_hash(Path),
-%%     PRec = #file{ request_path = Path, path_md5 = PHash, csum = erlang:adler32(Data) },
-
-%%     {ok, ReqId} = udon_op_fsm:op(N, W, {store, PRec, Data}, ?KEY(PHash)),
-
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {store, {Bucket, Key}, Value}, {Bucket, Key}),
-
-    wait_for_reqid(ReqId, ?TIMEOUT).
-
-%% @TODO Handle redirects
-store(redirect, Path, NewPath) ->
-    PHash = path_to_hash(Path),
-
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {redirect, PHash, NewPath}, ?KEY(PHash)),
-    wait_for_reqid(ReqId, ?TIMEOUT).
-
-%% @doc Retrieves a static file from the given path
-fetch({Bucket, Key}) ->
-%%     PHash = path_to_hash(Path),
-%%     Idx = riak_core_util:chash_key(?KEY(PHash)),
-    Idx = riak_core_util:chash_key({Bucket, Key}),
-    %% TODO: Get a preflist with more than one node
-    [{Node, _Type}] = riak_core_apl:get_primary_apl(Idx, 1, udon),
-    riak_core_vnode_master:sync_spawn_command(Node, {fetch, {Bucket, Key}}, udon_vnode_master).
-
-rename(Path, NewPath) ->
-    Data = fetch(Path),
-    store(NewPath, Data),
-    store(redirect, Path, NewPath).
-    
-%% @doc Pings a random vnode to make sure communication is functional
-ping() ->
-    DocIdx = riak_core_util:chash_key({<<"ping">>, term_to_binary(now())}),
-    PrefList = riak_core_apl:get_primary_apl(DocIdx, 1, udon),
-    [{IndexNode, _Type}] = PrefList,
-    riak_core_vnode_master:sync_spawn_command(IndexNode, ping, udon_vnode_master).
-
 wait_for_reqid(Id, Timeout) ->
     receive {Id, Value} -> {ok, Value}
     after Timeout -> {error, timeout}
     end.
 
-path_to_hash(Path) when is_list(Path) ->
-    crypto:hash(md5, Path).
+handle_error(Operation, Args, Error) ->
+    case Error of
+        {error, timeout} ->
+            lager:error("~p ~p timeout", [Operation, Args]),
+            jiffy:encode({[{<<"status">>, 2}, {<<"error">>, <<"operation timeout">>}]});
+        _ ->
+            lager:error("~p ~p failed: ~p", [Operation, Args, Error]),
+            jiffy:encode({[{<<"status">>, 2}, {<<"error">>, <<"operation failed">>}]})
+    end.
 
+lists_union(Lists) ->
+    lists_union(Lists, gb_sets:new()).
+
+lists_union([], Set) ->
+    gb_sets:to_list(Set);
+lists_union([List | Rest], Set) ->
+    S = gb_sets:from_list(List),
+    Set2 = gb_sets:union([S, Set]),
+    lists_union(Rest, Set2).
