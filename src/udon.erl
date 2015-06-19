@@ -4,9 +4,9 @@
 
 -compile([{parse_transform, lager_transform}]).
 
--export([sadd/2, sadd_with_ttl/3, srem/2, smembers/2, del/2, smembers2/2]).
+-export([sadd/2, sadd_with_ttl/3, srem/2, srem_with_ttl/3, smembers/2, del/2, smembers2/2]).
 
--ignore_xref([sadd/2, sadd_with_ttl/3, srem/2, smembers/2, del/2, smembers2/2]).
+-ignore_xref([sadd/2, sadd_with_ttl/3, srem/2, srem_with_ttl/3, smembers/2, del/2, smembers2/2]).
 
 %% Public API
 
@@ -34,6 +34,20 @@ sadd_with_ttl({Bucket, Key}, Item, [{"ttl", TTL}]) ->
             handle_error(sadd, [{Bucket, Key}, Item], Error)
     end;
 sadd_with_ttl(_, _, _) ->
+    jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
+
+srem_with_ttl({Bucket, Key}, Item, [{"ttl", TTL}]) ->
+    CombinedKey = redis_backend:get_combined_key({Bucket, Key}),
+    case transaction({Bucket, Key}, [
+        [<<"SREM">>, CombinedKey, Item],
+        [<<"EXPIRE">>, CombinedKey, TTL]
+    ]) of
+        {ok, [ok, ok]} ->
+            jiffy:encode({[{<<"status">>, 0}]});
+        Error ->
+            handle_error(sadd, [{Bucket, Key}, Item], Error)
+    end;
+srem_with_ttl(_, _, _) ->
     jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
 %% @doc Remove an item to a set
