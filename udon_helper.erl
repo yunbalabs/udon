@@ -49,23 +49,23 @@ do(Options) ->
   if
     LocationTuple =/= false ->
       {location, BucketKey} = LocationTuple,
-      [Bucket, Key] = string:tokens(BucketKey, ","),
+      [Bucket, Key] = spilt_input(BucketKey),
       get_location(Node, Bucket, Key);
     SetTuple =/= false ->
       {set, BucketKeyValue} = SetTuple,
-      [Bucket, Key, Value] = string:tokens(BucketKeyValue, ","),
+      [Bucket, Key, Value] = spilt_input(BucketKeyValue),
       set_value(Node, Bucket, Key, Value);
     GetTuple =/= false ->
       {get, BucketKey} = GetTuple,
-      [Bucket, Key] = string:tokens(BucketKey, ","),
+      [Bucket, Key] = spilt_input(BucketKey),
       get_value(Node, Bucket, Key);
     ExistTuple =/= false ->
       {exist, BucketKeyValue} = ExistTuple,
-      [Bucket, Key, Value] = string:tokens(BucketKeyValue, ","),
+      [Bucket, Key, Value] = spilt_input(BucketKeyValue),
       exist_value(Node, Bucket, Key, Value);
     RemoveTuple =/= false ->
       {remove, BucketKeyValue} = RemoveTuple,
-      [Bucket, Key, Value] = string:tokens(BucketKeyValue, ","),
+      [Bucket, Key, Value] = spilt_input(BucketKeyValue),
       remove_value(Node, Bucket, Key, Value);
     Handoff =/= false ->
       get_handoff_status(Node)
@@ -93,3 +93,9 @@ remove_value(Node, Bucket, Key, Value) ->
 
 get_handoff_status(Node) ->
   io:format("~p~n", [rpc:call(Node, riak_core_handoff_manager, status, [])]).
+
+spilt_input(Input) ->
+  List = string:tokens(Input, ","),
+  lists:map(fun (A) ->
+    list_to_binary(A)
+  end, List).
