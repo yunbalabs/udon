@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -sname udon_helper -setcookie udon -pz deps/getopt/ebin
+%%! -smp enable -sname udon_helper -setcookie udon -pz deps/getopt/ebin -pz deps/jiffy/ebin
 
 -include("src/udon.hrl").
 
@@ -76,20 +76,19 @@ get_location(Node, Bucket, Key) ->
   io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, riak_core_apl, get_apl, [HashKey, 3, udon])]).
 
 set_value(Node, Bucket, Key, Value) ->
-  ValueBin = list_to_binary(Value),
-  io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, sadd, [{Bucket, Key}, ValueBin])]).
+  io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, sadd, [{Bucket, Key}, Value])]).
 
 get_value(Node, Bucket, Key) ->
   io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, smembers, [Bucket, Key])]).
 
 exist_value(Node, Bucket, Key, Value) ->
-  ValueBin = list_to_binary(Value),
-  {ok,[{ok, Values} | _ ]} = rpc:call(Node, udon, smembers, [Bucket, Key]),
-  io:format("~p~n", [lists:any(fun(E) -> E =:= ValueBin end, Values)]).
+  Result = rpc:call(Node, udon, smembers2, [Bucket, Key]),
+  {Result2} = jiffy:decode(Result),
+  Data = proplists:get_value(<<"data">>, Result2),
+  io:format("~p~n", [lists:any(fun(E) -> E =:= Value end, Data)]).
 
 remove_value(Node, Bucket, Key, Value) ->
-  ValueBin = list_to_binary(Value),
-  io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, srem, [{Bucket, Key}, ValueBin])]).
+  io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, srem, [{Bucket, Key}, Value])]).
 
 get_handoff_status(Node) ->
   io:format("~p~n", [rpc:call(Node, riak_core_handoff_manager, status, [])]).
