@@ -57,8 +57,8 @@ handle_command({RequestId, {sadd, {Bucket, Key}, Item}}, _Sender, State) ->
     Result = case redis_backend:sadd(Bucket, Key, "_", Item, State#state.redis_state) of
                  {ok, _} ->
                      ok;
-                 {error, _, _} ->
-                     error
+                 Error ->
+                     Error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -71,8 +71,8 @@ handle_command({RequestId, {srem, {Bucket, Key}, Item}}, _Sender, State) ->
     Result = case redis_backend:srem(Bucket, Key, "_", Item, State#state.redis_state) of
                  {ok, _} ->
                      ok;
-                 {error, _, _} ->
-                     error
+                 Error ->
+                     Error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -85,8 +85,8 @@ handle_command({RequestId, {transaction, {_Bucket, _Key}, CommandList}}, _Sender
     Result = case redis_backend:transaction(CommandList, State#state.redis_state) of
                {ok, _} ->
                    ok;
-               {error, _, _} ->
-                   error
+               Error ->
+                   Error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -94,8 +94,8 @@ handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
                  {ok, Value, _} ->
                      {ok, Value};
-                 {error, _, _} ->
-                     error
+                 Error ->
+                     Error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -108,8 +108,8 @@ handle_command({RequestId, {del, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:del(Bucket, Key, State#state.redis_state) of
                {ok, _} ->
                    ok;
-               {error, _, _} ->
-                   error
+               Error ->
+                   Error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -127,8 +127,8 @@ handle_command({RequestId, {store, {Bucket, Key}, Value}}, _Sender, State) ->
     Result = case redis_backend:put(Bucket, Key, "_", Value, State#state.redis_state) of
         {ok, _} ->
             ok;
-        {error, _, _} ->
-            error
+        Error ->
+            Error
     end,
     {reply, {RequestId, Result}, State};
 
