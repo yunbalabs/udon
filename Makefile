@@ -18,6 +18,9 @@ distclean: clean devclean relclean
 rel: all
 	$(REBAR) generate
 
+console:rel 
+	rel/udon/bin/udon console
+
 relclean:
 	rm -rf rel/udon
 

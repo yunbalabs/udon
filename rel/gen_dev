@@ -13,12 +13,17 @@ VARFILE=$3
 ##   .7 - http
 
 NUMBER=${NAME##dev}
-BASE=$((10000 + 10 * $NUMBER))
+BASE=$((10000 + 100 * $NUMBER))
 WEBPORT=$(($BASE + 8))
 HANDOFFPORT=$(($BASE + 9))
 NODENAME="udon$NUMBER@127.0.0.1"
+SNAME="udon$NUMBER"
+REDISPORT=$((BASE + 10))
 
-echo "Generating $NAME - node='$NODENAME' http=$WEBPORT handoff=$HANDOFFPORT"
+echo "Generating $NAME - node='$NODENAME' sname='$SNAME' http=$WEBPORT handoff=$HANDOFFPORT redis=$REDISPORT"
 sed -e "s/@NODE@/$NODENAME/" \
     -e "s/@WEBPORT@/$WEBPORT/" \
-    -e "s/@HANDOFFPORT@/$HANDOFFPORT/" < $TEMPLATE > $VARFILE
+    -e "s/@HANDOFFPORT@/$HANDOFFPORT/" \
+    -e "s/@REDISPORT@/$REDISPORT/" \
+    -e "s/@SNAME@/$SNAME/" \
+     < $TEMPLATE > $VARFILE
