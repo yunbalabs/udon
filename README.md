@@ -7,7 +7,7 @@ Quick Start
 ===========
 Clone this project
 ```
-git clone https://github.com/TigerZhang/udon.git udon
+git clone https://github.com/yunbalabs/udon.git udon
 ```
 
 Compile and play around
