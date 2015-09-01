@@ -3,7 +3,7 @@
 -include("udon.hrl").
 
 %% API
--export([start_link/6, op/3, op/4]).
+-export([start_link/7, op/3, op/4]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -30,14 +30,15 @@
                 key,
                 accum,
                 preflist :: riak_core_apl:preflist2(),
-                num_w = 0 :: non_neg_integer()}).
+                num_w = 0 :: non_neg_integer(),
+                enable_forward}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(ReqID, From, Op, Key, N, W) ->
-    gen_fsm:start_link(?MODULE, [ReqID, From, Op, Key, N, W], []).
+start_link(EnableForward, ReqID, From, Op, Key, N, W) ->
+    gen_fsm:start_link(?MODULE, [EnableForward, ReqID, From, Op, Key, N, W], []).
 
 op(N, W, Op) ->
     op(N, W, Op, Op).
@@ -52,11 +53,23 @@ op(N, W, Op, Key) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([ReqID, From, Op, Key, N, W]) ->
-    SD = #state{req_id=ReqID, from=From, n=N, w=W, op=Op, key=Key, accum=[]},
+init([EnableForward, ReqID, From, Op, Key, N, W]) ->
+    SD = #state{req_id=ReqID, from=From, n=N, w=W, op=Op, key=Key, accum=[], enable_forward = EnableForward},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
+prepare(timeout, SD0=#state{n=1, key=Key, enable_forward = false, from = From, req_id=ReqID}) ->
+    DocIdx = riak_core_util:chash_key(Key),
+    Preflist = riak_core_apl:get_apl(DocIdx, 1, udon),
+    SelfNode = node(),
+    case Preflist of
+        [{_, SelfNode}] ->
+            SD = SD0#state{preflist=Preflist},
+            {next_state, execute, SD, 0};
+        [{_, TargetNode}] ->
+            From ! {forward_disable, ReqID, TargetNode},
+            {stop, normal, SD0}
+    end;
 prepare(timeout, SD0=#state{n=N, key=Key}) ->
     DocIdx = riak_core_util:chash_key(Key),
     Preflist = riak_core_apl:get_apl(DocIdx, N, udon),

@@ -73,7 +73,7 @@ do(Options) ->
 
 get_location(Node, Bucket, Key) ->
   HashKey = rpc:call(Node, riak_core_util, chash_key, [{Bucket, Key}]),
-  io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, riak_core_apl, get_apl, [HashKey, 3, udon])]).
+  io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, riak_core_apl, get_apl, [HashKey, 1, udon])]).
 
 set_value(Node, Bucket, Key, Value) ->
   io:format("~p,~p: ~p~n", [Bucket, Key, rpc:call(Node, udon, sadd, [{Bucket, Key}, Value])]).
