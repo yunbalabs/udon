@@ -14,27 +14,25 @@ Compile and play around
 =======================
 ```
 $ cd udon
-$ make devrel
+$ make rel
 ```
 
-Start dev nodes
+Start node
 ```
-$ ./devall.sh start
-```
-
-Create the cluster
-```
-$ . ./alias.sh
-$ u2a join cluster 'udon1@127.0.0.1'
-$ u3a join cluster 'udon1@127.0.0.1'
-$ u4a join cluster 'udon1@127.0.0.1'
-$ u1a cluster plan
-$ u1a cluster commit
+$ ./rel/udon/bin/udon start
 ```
 
-Add some datas
+Play with redis-cli
 ```
-./add_test.erl 10
+$ redis-cli -p 6380
+127.0.0.1:6380> SADD 1,1 1
+(integer) 1
+127.0.0.1:6380> SMEMBERS 1,1
+1) "1"
+127.0.0.1:6380> SREM 1,1 1
+(integer) 1
+127.0.0.1:6380> SMEMBERS 1,1
+(empty list or set)
 ```
 
 Check the keys/nodes/vnodes
