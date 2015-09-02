@@ -47,7 +47,7 @@
     fold_objects/4,
     is_empty/1,
     status/1,
-    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, smembers/4, del/3, listen_port/1,
+    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, command/2, smembers/4, del/3, listen_port/1,
     all_keys/1, all_values/2, get_combined_key/1]).
 
 -export([data_size/1]).
@@ -223,6 +223,14 @@ transaction(CommandList, #state{storage_scheme = _Scheme, redis_context = Contex
     case hierdis:transaction(Context, CommandList) of
         {ok, _Response} ->
             {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+command(Command, #state{storage_scheme = _Scheme, redis_context = Context} = State) ->
+    case hierdis:command(Context, Command) of
+        {ok, Value} ->
+            {ok, Value, State};
         {error, Reason} ->
             {error, Reason, State}
     end.

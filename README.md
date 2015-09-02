@@ -46,10 +46,42 @@ optional arguments:
                     key_replica, all
 ```
 
-Caution
+Supported Commands
 ======
-1. Just sadd/srem supported
-2. It's just a early demo, not suitable for product.
+### SADD bucket_name,key member
+```
+sadd bucket_1,1 123
+```
+
+### SREM bucket_name,key member
+```
+srem bucket_1,1 123
+```
+
+### SMEMBERS bucket_name,key
+```
+smembers bucket_1,1
+```
+
+### EXPIRE bucket_name,key seconds
+```
+expire bucket_1,1 60
+```
+
+### STAT_APPKEY_ONLINE stat,appkey uid seconds
+```
+stat_appkey_online stat,5562d79527302bb3158937d7 2449968497667150720 60
+```
+
+### STAT_APPKEY_OFFLINE stat,appkey uid seconds
+```
+stat_appkey_offline stat,5562d79527302bb3158937d7 2449968497667150720 60
+```
+
+### STAT_APPKEY stat,appkey key
+```
+stat_appkey stat,5562d79527302bb3158937d7 active_5562d79527302bb3158937d7_2015-09-02
+```
 
 Todo
 ====
