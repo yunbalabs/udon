@@ -38,6 +38,7 @@
     capabilities/2,
     start/2,
     stop/1,
+    start_redis_process/0,
     get/3,
     put/5,
     delete/4,
@@ -97,52 +98,53 @@ start(Partition, _Config) ->
     case start_hierdis_application() of
         ok ->
             %% Get the data root directory
-            DataRoot = filename:absname(app_helper:get_env(hierdis, data_root)),
-            ConfigFile = filename:absname(app_helper:get_env(hierdis, config_file)),
-            DataDir = filename:join([DataRoot, integer_to_list(Partition)]),
-
-            ExpectedExecutable = filename:absname(app_helper:get_env(hierdis, executable)),
-            ExpectedSocketFile = lists:flatten([app_helper:get_env(hierdis, unixsocket), atom_to_list(node()),
-                ".", integer_to_list(Partition)]),
-
             Scheme = case app_helper:get_env(hierdis, storage_scheme) of
                          hash -> hash;
                          _ -> kv
                      end,
-
-            case filelib:ensure_dir(filename:join([DataDir, dummy])) of
-                ok ->
-                    case check_redis_install(ExpectedExecutable) of
-                        {ok, RedisExecutable} ->
-                            case start_redis(Partition, RedisExecutable, ConfigFile, ExpectedSocketFile, DataDir) of
-                                {ok, RedisSocket, ListenPort} ->
-                                    case hierdis:connect_unix(RedisSocket) of
-                                        {ok, RedisContext} ->
-                                            case wait_for_redis_loaded(RedisContext, 100, 6000) of
-                                                ok ->
-                                                    Result = {ok, #state{
-                                                        redis_context=RedisContext,
-                                                        redis_socket_path=RedisSocket,
-                                                        redis_listen_port = ListenPort,
-                                                        storage_scheme=Scheme,
-                                                        data_dir=DataDir,
-                                                        partition=Partition,
-                                                        root=DataRoot
-                                                    }},
-                                                    lager:info("Started redis backend for partition: ~p\n", [Partition]),
-                                                    Result;
-                                                timeout ->
-                                                    {error, wait_for_redis_loaded_timeout}
-                                            end;
-                                        {error, Reason} -> {error, Reason}
-                                    end;
-                                {error, Reason} -> {error, Reason}
-                            end;
-                        {error, Reason} -> {error, Reason}
+            case hierdis:connect_unix(RedisSocket) of
+                {ok, RedisContext} ->
+                    case wait_for_redis_loaded(RedisContext, 100, 6000) of
+                        ok ->
+                            Result = {ok, #state{
+                                redis_context=RedisContext,
+                                storage_scheme=Scheme,
+                                data_dir=DataDir,
+                                partition=Partition,
+                                root=DataRoot
+                            }},
+                            lager:info("Started redis backend for partition: ~p\n", [Partition]),
+                            Result;
+                        timeout ->
+                            {error, wait_for_redis_loaded_timeout}
                     end;
-                {error, Reason} -> {error, {Reason, "Failed to create data directories for redis backend."}}
+                {error, Reason} -> {error, Reason}
             end;
         {error, Reason} -> {error, Reason}
+    end.
+
+-spec start_redis_process(integer()) -> ok.
+start_redis_process(Partition) ->
+    DataRoot = filename:absname(app_helper:get_env(hierdis, data_root)),
+    ConfigFile = filename:absname(app_helper:get_env(hierdis, config_file)),
+    DataDir = filename:join([DataRoot, integer_to_list(Partition)]),
+
+    ExpectedExecutable = filename:absname(app_helper:get_env(hierdis, executable)),
+    ExpectedSocketFile = lists:flatten([app_helper:get_env(hierdis, unixsocket), atom_to_list(node()),
+        ".", integer_to_list(Partition)]),
+
+    case filelib:ensure_dir(filename:join([DataDir, dummy])) of
+        ok ->
+            case check_redis_install(ExpectedExecutable) of
+                {ok, RedisExecutable} ->
+                    case start_redis(Partition, RedisExecutable, ConfigFile, ExpectedSocketFile, DataDir) of
+                        {ok, RedisSocket, ListenPort} ->
+                            {ok, RedisSocket, ListenPort};
+                        {error, Reason} -> {error, Reason}
+                    end;
+                {error, Reason} -> {error, Reason}
+            end;
+        {error, Reason} -> {error, {Reason, "Failed to create data directories for redis backend."}}
     end.
 
 %% @doc Stop the backend
