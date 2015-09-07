@@ -38,7 +38,6 @@
     capabilities/2,
     start/2,
     stop/1,
-    start_redis_process/0,
     get/3,
     put/5,
     delete/4,
@@ -48,7 +47,7 @@
     fold_objects/4,
     is_empty/1,
     status/1,
-    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, smembers/4, del/3, listen_port/1,
+    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, smembers/4, del/3,
     all_keys/1, all_values/2, get_combined_key/1]).
 
 -export([data_size/1]).
@@ -57,12 +56,9 @@
 -define(CAPABILITIES, [async_fold, size]).
 
 -record(state, {redis_context :: term(),
-                redis_socket_path :: string(),
-                redis_listen_port :: string(),
                 storage_scheme :: atom(),
-                data_dir :: string(),
-                partition :: integer(),
-                root :: string()}).
+                partition :: integer()
+                }).
 
 -type state() :: #state{}.
 -type config() :: [{atom(), term()}].
@@ -102,49 +98,11 @@ start(Partition, _Config) ->
                          hash -> hash;
                          _ -> kv
                      end,
-            case hierdis:connect_unix(RedisSocket) of
-                {ok, RedisContext} ->
-                    case wait_for_redis_loaded(RedisContext, 100, 6000) of
-                        ok ->
-                            Result = {ok, #state{
-                                redis_context=RedisContext,
-                                storage_scheme=Scheme,
-                                data_dir=DataDir,
-                                partition=Partition,
-                                root=DataRoot
-                            }},
-                            lager:info("Started redis backend for partition: ~p\n", [Partition]),
-                            Result;
-                        timeout ->
-                            {error, wait_for_redis_loaded_timeout}
-                    end;
+            case udon_redis:connect_redis() of
+                {ok, RedisContext} -> {ok, #state{redis_context = RedisContext}};
                 {error, Reason} -> {error, Reason}
             end;
         {error, Reason} -> {error, Reason}
-    end.
-
--spec start_redis_process(integer()) -> ok.
-start_redis_process(Partition) ->
-    DataRoot = filename:absname(app_helper:get_env(hierdis, data_root)),
-    ConfigFile = filename:absname(app_helper:get_env(hierdis, config_file)),
-    DataDir = filename:join([DataRoot, integer_to_list(Partition)]),
-
-    ExpectedExecutable = filename:absname(app_helper:get_env(hierdis, executable)),
-    ExpectedSocketFile = lists:flatten([app_helper:get_env(hierdis, unixsocket), atom_to_list(node()),
-        ".", integer_to_list(Partition)]),
-
-    case filelib:ensure_dir(filename:join([DataDir, dummy])) of
-        ok ->
-            case check_redis_install(ExpectedExecutable) of
-                {ok, RedisExecutable} ->
-                    case start_redis(Partition, RedisExecutable, ConfigFile, ExpectedSocketFile, DataDir) of
-                        {ok, RedisSocket, ListenPort} ->
-                            {ok, RedisSocket, ListenPort};
-                        {error, Reason} -> {error, Reason}
-                    end;
-                {error, Reason} -> {error, Reason}
-            end;
-        {error, Reason} -> {error, {Reason, "Failed to create data directories for redis backend."}}
     end.
 
 %% @doc Stop the backend
@@ -246,9 +204,6 @@ del(Bucket, Key, #state{storage_scheme = _Scheme, redis_context = Context} = Sta
         {error, Reason} ->
             {error, Reason, State}
     end.
-
-listen_port(#state{redis_listen_port = ListenPort} = State) ->
-    {ok, ListenPort, State}.
 
 all_keys(SocketFile) ->
     case file_exists(SocketFile) of
@@ -588,104 +543,6 @@ file_exists(Filepath) ->
         _ ->
             true
     end.
-
-%% @private
-check_redis_install(Executable) ->
-    case file_exists(Executable) of
-        true ->
-            {ok, Executable};
-        false ->
-            {error, {io:format("Failed to locate Redis executable: ~p", [Executable])}}
-    end.
-
-%% @private
-start_redis(Partition, Executable, ConfigFile, SocketFile, DataDir) ->
-    case file:change_mode(Executable, 8#00755) of
-        ok ->
-            case file_exists(SocketFile) of
-                true ->
-                    {ok, {listen_port, ListenPort}} = read_redis_config(Partition),
-                    {ok, SocketFile, ListenPort};
-                false ->
-                    case try_start_redis(Executable, ConfigFile, SocketFile, DataDir, 50) of
-                        {ok, SocketFile, ListenPort} ->
-                            store_redis_config(Partition, {listen_port, ListenPort}),
-                            {ok, SocketFile, ListenPort};
-                        {error, Reason} ->
-                            {error, Reason}
-                    end
-            end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-try_start_redis(_Executable, _ConfigFile, _SocketFile, _DataDir, 0) ->
-    {error, {redis_error, "Redis can't start, all ports are unavailable"}};
-try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes) ->
-    random:seed(now()),
-    ListenPort = integer_to_list(10000 + random:uniform(50000)),
-    Args = [ConfigFile, "--unixsocket", SocketFile, "--daemonize", "yes", "--port", ListenPort],
-    Port = erlang:open_port({spawn_executable, [Executable]}, [{args, Args}, {cd, filename:absname(DataDir)}]),
-    receive
-        {'EXIT', Port, normal} ->
-            case wait_for_file(SocketFile, 100, 50) of
-                {ok, File} ->
-                    {ok, File, ListenPort};
-                _Error ->
-                    try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes - 1)
-            end;
-        {'EXIT', Port, Reason} ->
-            {error, {redis_error, Port, Reason, io:format("Could not start Redis via Erlang port: ~p\n", [Executable])}}
-    end.
-
-%% @private
-wait_for_file(File, Msec, Attempts) when Attempts > 0 ->
-    case file_exists(File) of
-        true->
-            {ok, File};
-        false ->
-            timer:sleep(Msec),
-            wait_for_file(File, Msec, Attempts-1)
-    end;
-wait_for_file(File, _Msec, Attempts) when Attempts =< 0 ->
-    {error, {redis_error, "Redis isn't running, couldn't find: ~p\n", [File]}}.
-
-wait_for_redis_loaded(_RedisContext, _Msec, 0) ->
-    timeout;
-wait_for_redis_loaded(RedisContext, Msec, Attempts) ->
-    case hierdis:command(RedisContext, ["PING"]) of
-        {ok, <<"PONG">>} ->
-            ok;
-        _ ->
-            timer:sleep(Msec),
-            wait_for_redis_loaded(RedisContext, Msec, Attempts-1)
-    end.
-
-read_redis_config(Partition) ->
-    case ets:file2tab("redis_config.dat") of
-        {ok, Tab} ->
-            Ret = case ets:lookup(Tab, Partition) of
-                [{_, Config}] ->
-                    {ok, Config};
-                [] ->
-                    {error, not_found}
-            end,
-            ets:delete(Tab),
-            Ret;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-store_redis_config(Partition, Config) ->
-    Tab2 = case ets:file2tab("redis_config.dat") of
-        {ok, Tab} ->
-            Tab;
-        {error, _Reason} ->
-            ets:new(redis_config_table, [])
-    end,
-    ets:insert(Tab2, {Partition, Config}),
-    ets:tab2file(Tab2, "redis_config.dat"),
-    ets:delete(Tab2).
 
 get_combined_key({Bucket, Key}) ->
     [Bucket, <<",">>, Key].

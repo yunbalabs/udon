@@ -28,6 +28,10 @@ init(_Args) ->
               {udon_op_fsm_sup, start_link, []},
               permanent, infinity, supervisor, [udon_op_fsm_sup]},
 
+    RedisServer = {udon_redis,
+        {udon_redis, start_link, [udon_redis]},
+        permanent, 5000, worker, [udon_redis]},
+
     { ok,
         { {one_for_one, 5, 10},
-          [VMaster, OpFSMs]}}.
+          [VMaster, OpFSMs, RedisServer]}}.
