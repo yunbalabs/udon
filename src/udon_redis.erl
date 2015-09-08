@@ -13,7 +13,7 @@
 
 %% API
 -export([start_link/0]).
--export([connect_redis/0]).
+-export([connect_redis/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -30,14 +30,16 @@
     listen_port     ::  integer()
 }).
 
+-compile([{parse_transform, lager_transform}]).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
 
--spec(connect_redis() -> {ok, Context :: term()} | {error, Reason :: term()}).
-connect_redis() ->
+-spec(connect_redis(Partition :: integer()) -> {ok, Context :: term()} | {error, Reason :: term()}).
+connect_redis(Partition) ->
     try
-        gen_server:call(?SERVER, connect_redis)
+        gen_server:call(?SERVER, {connect_redis, Partition})
     catch E:T ->
         {error, {E, T}}
     end.
@@ -77,8 +79,7 @@ init([]) ->
     DataDir = filename:join([DataRoot, node()]),
 
     ExpectedExecutable = filename:absname(app_helper:get_env(hierdis, executable)),
-    ExpectedSocketFile = lists:flatten([app_helper:get_env(hierdis, unixsocket), atom_to_list(node()),
-        ".", node()]),
+    ExpectedSocketFile = lists:concat([app_helper:get_env(hierdis, unixsocket), node()]),
 
     case filelib:ensure_dir(filename:join([DataDir, dummy])) of
         ok ->
@@ -112,13 +113,20 @@ init([]) ->
     {noreply, NewState :: #state{}, timeout() | hibernate} |
     {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
     {stop, Reason :: term(), NewState :: #state{}}).
-handle_call(connect_redis, From, State = #state{unix_socket = UnixSocket}) ->
+handle_call({connect_redis, Partition}, From, State = #state{unix_socket = UnixSocket}) ->
     case hierdis:connect_unix(UnixSocket) of
         {ok, RedisContext} ->
             case wait_for_redis_loaded(RedisContext, 100, 6000) of
                 ok ->
-                    lager:info("connect redis ok from request: ~p\n", [From]),
-                    {reply, {ok, RedisContext}, State};
+                    DbIndex = get_db_index(Partition),
+                    case hierdis:command(RedisContext, ["select", integer_to_binary(DbIndex)]) of
+                        {ok, _} ->
+                            lager:info("connect redis ok from request: ~p, partition: ~p", [From, Partition]),
+                            {reply, {ok, RedisContext}, State};
+                        Error ->
+                            lager:info("select redis key space failed: ~p from: ~p, partition: ~p", [Error, From, Partition]),
+                            {reply, {error, Error}, State}
+                    end;
                 timeout ->
                     {error, wait_for_redis_loaded_timeout}
             end;
@@ -226,19 +234,20 @@ try_start_redis(_Executable, _ConfigFile, _SocketFile, _DataDir, 0) ->
     {error, {redis_error, "Redis can't start, all ports are unavailable"}};
 try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes) ->
     random:seed(now()),
-    ListenPort = 0, %integer_to_list(10000 + random:uniform(50000)),
-    Args = [ConfigFile, "--unixsocket", SocketFile, "--daemonize", "yes", "--port", ListenPort, "--databases", 1024],
-    Port = erlang:open_port({spawn_executable, [Executable]}, [{args, Args}, {cd, filename:absname(DataDir)}]),
-    receive
-        {'EXIT', Port, normal} ->
-            case wait_for_file(SocketFile, 100, 50) of
-                {ok, File} ->
-                    {ok, File, ListenPort};
-                _Error ->
-                    try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes - 1)
-            end;
-        {'EXIT', Port, Reason} ->
-            {error, {redis_error, Port, Reason, io:format("Could not start Redis via Erlang port: ~p\n", [Executable])}}
+    ListenPort = "0", %integer_to_list(10000 + random:uniform(50000)),
+    Args = [ConfigFile, "--unixsocket", SocketFile, "--daemonize", "yes", "--port", ListenPort, "--databases", "1024"],
+    try
+        Port = erlang:open_port({spawn_executable, [Executable]}, [{args, Args}, {cd, filename:absname(DataDir)}]),
+        lager:info("redis service started: ~p", [Port]),
+        case wait_for_file(SocketFile, 100, 50) of
+            {ok, File} ->
+                {ok, File, ListenPort};
+            _Error ->
+                try_start_redis(Executable, ConfigFile, SocketFile, DataDir, TryTimes - 1)
+        end
+    catch E:T ->
+        lager:error("Could not start Redis via Erlang port: ~p due to ~p:~p\n", [Executable, E, T]),
+        {error, {E, T}}
     end.
 
 redis_config_file_name(Node) ->
@@ -300,4 +309,29 @@ file_exists(Filepath) ->
             false;
         _ ->
             true
+    end.
+
+-define(DB_INDEX_FILE, "db_index.idx").
+-spec(get_db_index(Partition :: integer()) -> integer()).
+get_db_index(Partition) ->
+    DbTab =
+        case file_exists(?DB_INDEX_FILE) of
+            true ->
+                case ets:file2tab(?DB_INDEX_FILE) of
+                    {ok, Tab} -> Tab;
+                    Error ->
+                        lager:error("read db file ~p to ets failed: ~p", [?DB_INDEX_FILE, Error]),
+                        ets:new(redis_db_table, [])
+                end;
+            false ->
+                ets:new(redis_db_table, [])
+        end,
+    case ets:lookup(DbTab, Partition) of
+        [{_, Index}] -> Index;
+        [] ->
+            LastIndex = ets:info(DbTab, size),
+            CurIndex = LastIndex+1,
+            ets:insert(DbTab, {Partition, CurIndex}),
+            ets:tab2file(DbTab, ?DB_INDEX_FILE),
+            CurIndex
     end.

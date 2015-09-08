@@ -29,7 +29,7 @@ init(_Args) ->
               permanent, infinity, supervisor, [udon_op_fsm_sup]},
 
     RedisServer = {udon_redis,
-        {udon_redis, start_link, [udon_redis]},
+        {udon_redis, start_link, []},
         permanent, 5000, worker, [udon_redis]},
 
     { ok,

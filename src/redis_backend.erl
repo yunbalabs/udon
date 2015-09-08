@@ -98,8 +98,11 @@ start(Partition, _Config) ->
                          hash -> hash;
                          _ -> kv
                      end,
-            case udon_redis:connect_redis() of
-                {ok, RedisContext} -> {ok, #state{redis_context = RedisContext}};
+            case udon_redis:connect_redis(Partition) of
+                {ok, RedisContext} -> {ok, #state{
+                    redis_context = RedisContext,
+                    storage_scheme = Scheme
+                }};
                 {error, Reason} -> {error, Reason}
             end;
         {error, Reason} -> {error, Reason}
