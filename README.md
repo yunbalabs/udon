@@ -78,9 +78,9 @@ stat_appkey_online stat,5562d79527302bb3158937d7 2449968497667150720 60
 stat_appkey_offline stat,5562d79527302bb3158937d7 2449968497667150720 60
 ```
 
-### STAT_APPKEY stat,appkey key
+### STAT_APPKEY stat,appkey type date date_type range
 ```
-stat_appkey stat,5562d79527302bb3158937d7 active_5562d79527302bb3158937d7_2015-09-02
+stat_appkey stat,5562d79527302bb3158937d7 active 2015-09-08-16-54-07 d 3
 ```
 
 Todo

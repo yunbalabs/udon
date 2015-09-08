@@ -99,6 +99,15 @@ handle_command({RequestId, {command, {_Bucket, _Key}, Command}}, _Sender, State)
              end,
     {reply, {RequestId, Result}, State};
 
+handle_command({RequestId, {transaction_with_value, {_Bucket, _Key}, CommandList}}, _Sender, State) when is_list(CommandList) ->
+  Result = case redis_backend:transaction_with_value(CommandList, State#state.redis_state) of
+             {ok, Value, _} ->
+               {ok, Value};
+             Error ->
+               Error
+           end,
+  {reply, {RequestId, Result}, State};
+
 handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
                  {ok, Value, _} ->
