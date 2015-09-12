@@ -68,14 +68,14 @@ smembers bucket_1,1
 expire bucket_1,1 60
 ```
 
-### STAT_APPKEY_ONLINE stat,appkey uid seconds
+### STAT_APPKEY_ONLINE stat,key appkey uid seconds
 ```
-stat_appkey_online stat,5562d79527302bb3158937d7 2449968497667150720 60
+stat_appkey_online stat,5562d79527302bb3158937d7_1 5562d79527302bb3158937d7 2449968497667150720 60
 ```
 
-### STAT_APPKEY_OFFLINE stat,appkey uid seconds
+### STAT_APPKEY_OFFLINE stat,key appkey uid seconds
 ```
-stat_appkey_offline stat,5562d79527302bb3158937d7 2449968497667150720 60
+stat_appkey_offline stat,5562d79527302bb3158937d7_1 5562d79527302bb3158937d7 2449968497667150720 60
 ```
 
 ### STAT_APPKEY stat,appkey type date date_type range
