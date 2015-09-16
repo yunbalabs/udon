@@ -12,7 +12,7 @@
 
 %% @doc Add an item to a set
 sadd({Bucket, Key}, Item) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {sadd, {Bucket, Key}, Item}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {sadd, {Bucket, Key}, Item}, {Bucket, Key}, ?TIMEOUT),
     case wait_for_reqid(ReqId, ?TIMEOUT) of
         {ok, [ok, ok]} ->
             jiffy:encode({[{<<"status">>, 0}]});
@@ -52,7 +52,7 @@ srem_with_ttl(_, _, _) ->
 
 %% @doc Remove an item to a set
 srem({Bucket, Key}, Item) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {srem, {Bucket, Key}, Item}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {srem, {Bucket, Key}, Item}, {Bucket, Key}, ?TIMEOUT),
     case wait_for_reqid(ReqId, ?TIMEOUT) of
         {ok, [ok, ok]} ->
             jiffy:encode({[{<<"status">>, 0}]});
@@ -64,7 +64,7 @@ srem(_, _) ->
 
 %% @doc Delete a set
 del(Bucket, Key) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {del, Bucket, Key}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {del, Bucket, Key}, {Bucket, Key}, ?TIMEOUT),
     case wait_for_reqid(ReqId, ?TIMEOUT) of
         {ok, [ok, ok]} ->
             jiffy:encode({[{<<"status">>, 0}]});
@@ -76,7 +76,7 @@ del(_, _) ->
 
 %% @doc Fetch items in a set
 smembers(Bucket, Key) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?R, {smembers, Bucket, Key}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?R, {smembers, Bucket, Key}, {Bucket, Key}, ?TIMEOUT),
     case wait_for_reqid(ReqId, ?TIMEOUT) of
         {ok, [{ok, Data1}, {ok, Data2}, {ok, Data3}]} ->
             Data = lists_union([Data1, Data2, Data3]),
@@ -88,7 +88,7 @@ smembers(_, _) ->
     jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
 smembers2(Bucket, Key) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?R, {redis_address}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?R, {redis_address}, {Bucket, Key}, ?TIMEOUT),
     case wait_for_reqid(ReqId, ?TIMEOUT) of
         {ok, RedisAddresses} ->
             WorkerPid = self(),
@@ -123,7 +123,7 @@ smembers2(_, _) ->
     jiffy:encode({[{<<"status">>, 1}, {<<"error">>, <<"invalid parameters">>}]}).
 
 transaction({Bucket, Key}, CommandList) ->
-    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {transaction, {Bucket, Key}, CommandList}, {Bucket, Key}),
+    {ok, ReqId} = udon_op_fsm:op(?N, ?W, {transaction, {Bucket, Key}, CommandList}, {Bucket, Key}, ?TIMEOUT),
     wait_for_reqid(ReqId, ?TIMEOUT).
 
 collect_result(0, Results) ->

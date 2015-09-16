@@ -3,7 +3,7 @@
 -include("udon.hrl").
 
 %% API
--export([start_link/7, op/3, op/4]).
+-export([start_link/8, op/5]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -31,21 +31,21 @@
                 accum,
                 preflist :: riak_core_apl:preflist2(),
                 num_w = 0 :: non_neg_integer(),
-                enable_forward}).
+                enable_forward,
+                timeout}).
+
+-compile([{parse_transform, lager_transform}]).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link(EnableForward, ReqID, From, Op, Key, N, W) ->
-    gen_fsm:start_link(?MODULE, [EnableForward, ReqID, From, Op, Key, N, W], []).
+start_link(EnableForward, ReqID, From, Op, Key, N, W, Timeout) ->
+    gen_fsm:start_link(?MODULE, [EnableForward, ReqID, From, Op, Key, N, W, Timeout], []).
 
-op(N, W, Op) ->
-    op(N, W, Op, Op).
-
-op(N, W, Op, Key) ->
+op(N, W, Op, Key, Timeout) ->
     ReqID = reqid(),
-    udon_op_fsm_sup:start_write_fsm([ReqID, self(), Op, Key, N, W]),
+    udon_op_fsm_sup:start_write_fsm([ReqID, self(), Op, Key, N, W, Timeout]),
     {ok, ReqID}.
 
 %%%===================================================================
@@ -53,8 +53,8 @@ op(N, W, Op, Key) ->
 %%%===================================================================
 
 %% @doc Initialize the state data.
-init([EnableForward, ReqID, From, Op, Key, N, W]) ->
-    SD = #state{req_id=ReqID, from=From, n=N, w=W, op=Op, key=Key, accum=[], enable_forward = EnableForward},
+init([EnableForward, ReqID, From, Op, Key, N, W, Timeout]) ->
+    SD = #state{req_id=ReqID, from=From, n=N, w=W, op=Op, key=Key, accum=[], enable_forward = EnableForward, timeout = Timeout},
     {ok, prepare, SD, 0}.
 
 %% @doc Prepare the write by calculating the _preference list_.
@@ -78,14 +78,14 @@ prepare(timeout, SD0=#state{n=N, key=Key}) ->
 
 %% @doc Execute the write request and then go into waiting state to
 %% verify it has meets consistency requirements.
-execute(timeout, SD0=#state{req_id=ReqID, op=Op, preflist=Preflist}) ->
+execute(timeout, SD0=#state{req_id=ReqID, op=Op, preflist=Preflist, timeout = Timeout}) ->
     Command = {ReqID, Op},
     riak_core_vnode_master:command(Preflist, Command, {fsm, undefined, self()},
                                    udon_vnode_master),
-    {next_state, waiting, SD0}.
+    {next_state, waiting, SD0, Timeout}.
 
 %% @doc Wait for W write reqs to respond.
-waiting({ReqID, Resp}, SD0=#state{from=From, num_w=NumW0, w=W, accum=Accum}) ->
+waiting({ReqID, Resp}, SD0=#state{from=From, num_w=NumW0, w=W, accum=Accum, timeout = Timeout}) ->
     NumW = NumW0 + 1,
     NewAccum = [Resp|Accum],
     SD = SD0#state{num_w=NumW, accum=NewAccum},
@@ -93,8 +93,11 @@ waiting({ReqID, Resp}, SD0=#state{from=From, num_w=NumW0, w=W, accum=Accum}) ->
         NumW =:= W ->
             From ! {ReqID, NewAccum},
             {stop, normal, SD};
-        true -> {next_state, waiting, SD}
-    end.
+        true -> {next_state, waiting, SD, Timeout}
+    end;
+waiting(timeout, SD0) ->
+    lager:warning("waiting for respond timeout: ~p", [SD0]),
+    {stop, normal, SD0}.
 
 handle_info(Info, _StateName, StateData) ->
     lager:warning("got unexpected info ~p", [Info]),
@@ -115,4 +118,4 @@ terminate(_Reason, _SN, _SD) ->
 
 %% Private API
 
-reqid() -> erlang:phash2(erlang:now()).
+reqid() -> erlang:phash2(os:timestamp()).

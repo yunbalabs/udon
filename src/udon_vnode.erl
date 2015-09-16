@@ -5,25 +5,25 @@
 -include_lib("riak_core/include/riak_core_vnode.hrl").
 
 -export([start_vnode/1,
-         init/1,
-         terminate/2,
-         handle_command/3,
-         is_empty/1,
-         delete/1,
-         handle_handoff_command/3,
-         handoff_starting/2,
-         handoff_cancelled/1,
-         handoff_finished/2,
-         handoff_receive_start/1,
-         handoff_receive_finish/1,
-         handle_handoff_data/2,
-         encode_handoff_item/2,
-         handle_coverage/4,
-         handle_exit/3]).
+    init/1,
+    terminate/2,
+    handle_command/3,
+    is_empty/1,
+    delete/1,
+    handle_handoff_command/3,
+    handoff_starting/2,
+    handoff_cancelled/1,
+    handoff_finished/2,
+    handoff_receive_start/1,
+    handoff_receive_finish/1,
+    handle_handoff_data/2,
+    encode_handoff_item/2,
+    handle_coverage/4,
+    handle_exit/3]).
 
 -ignore_xref([
-             start_vnode/1
-             ]).
+    start_vnode/1
+]).
 
 -record(state, {partition, redis_state, handoff_receive=false, handoff_receive_queue}).
 
@@ -83,30 +83,30 @@ handle_command(Req={RequestId, {transaction, {_Bucket, _Key}, CommandList}}, Sen
     {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {transaction, {_Bucket, _Key}, CommandList}}, _Sender, State) when is_list(CommandList) ->
     Result = case redis_backend:transaction(CommandList, State#state.redis_state) of
-               {ok, _} ->
-                   ok;
-               Error ->
-                   Error
+                 {ok, _} ->
+                     ok;
+                 Error ->
+                     Error
              end,
     {reply, {RequestId, Result}, State};
 
 handle_command({RequestId, {command, {_Bucket, _Key}, Command}}, _Sender, State) ->
     Result = case redis_backend:command(Command, State#state.redis_state) of
-               {ok, Value, _} ->
-                   {ok, Value};
-               Error ->
-                   Error
+                 {ok, Value, _} ->
+                     {ok, Value};
+                 Error ->
+                     Error
              end,
     {reply, {RequestId, Result}, State};
 
 handle_command({RequestId, {transaction_with_value, {_Bucket, _Key}, CommandList}}, _Sender, State) when is_list(CommandList) ->
-  Result = case redis_backend:transaction_with_value(CommandList, State#state.redis_state) of
-             {ok, Value, _} ->
-               {ok, Value};
-             Error ->
-               Error
-           end,
-  {reply, {RequestId, Result}, State};
+    Result = case redis_backend:transaction_with_value(CommandList, State#state.redis_state) of
+                 {ok, Value, _} ->
+                     {ok, Value};
+                 Error ->
+                     Error
+             end,
+    {reply, {RequestId, Result}, State};
 
 handle_command({RequestId, {smembers, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:smembers(Bucket, Key, "_", State#state.redis_state) of
@@ -124,10 +124,10 @@ handle_command(Req={RequestId, {del, _Bucket, _Key}}, Sender, State=#state{
     {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {del, Bucket, Key}}, _Sender, State) ->
     Result = case redis_backend:del(Bucket, Key, State#state.redis_state) of
-               {ok, _} ->
-                   ok;
-               Error ->
-                   Error
+                 {ok, _} ->
+                     ok;
+                 Error ->
+                     Error
              end,
     {reply, {RequestId, Result}, State};
 
@@ -143,11 +143,11 @@ handle_command(Req={RequestId, {store, {_Bucket, _Key}, _Value}}, Sender, State=
     {reply, {RequestId, ok}, State#state{handoff_receive_queue=Queue2}};
 handle_command({RequestId, {store, {Bucket, Key}, Value}}, _Sender, State) ->
     Result = case redis_backend:put(Bucket, Key, "_", Value, State#state.redis_state) of
-        {ok, _} ->
-            ok;
-        Error ->
-            Error
-    end,
+                 {ok, _} ->
+                     ok;
+                 Error ->
+                     Error
+             end,
     {reply, {RequestId, Result}, State};
 
 handle_command({fetch, {Bucket, Key}}, _Sender, State) ->
@@ -166,7 +166,7 @@ handle_command(Message, Sender, State) ->
     {noreply, State}.
 
 %% The `VisitFun' is riak_core_handoff_sender:visit_item/3
-%% visit_item/3 is going to do all of the hard work of taking your serialized 
+%% visit_item/3 is going to do all of the hard work of taking your serialized
 %% data and pushing it over the wire to the remote node.
 %%
 %% Acc0 here is the internal state of the handoff. visit_item/3 returns an
@@ -175,10 +175,10 @@ handle_command(Message, Sender, State) ->
 %%
 %% The goal here is simple: for each vnode, find all objects, then for
 %% each object in a vnode, grab its metadata and the file contents, serialize it
-%% using the `encode_handoff_item/2' callback and ship it over to the 
+%% using the `encode_handoff_item/2' callback and ship it over to the
 %% remote node.
 %%
-%% The remote node is going to receive the serialized data using 
+%% The remote node is going to receive the serialized data using
 %% the `handle_handoff_data/2' function below.
 handle_handoff_command(FoldReq = ?FOLD_REQ{foldfun=_VisitFun, acc0=_Acc0}, _Sender, State) ->
     Final = redis_backend:handle_handoff_command(FoldReq, _Sender, State#state.redis_state),
@@ -225,16 +225,16 @@ handoff_receive_finish(State=#state{handoff_receive_queue=Queue}) ->
     State#state{handoff_receive=false, handoff_receive_queue=Queue2}.
 
 handle_handoff_data(Data, State) ->
-    {{Bucket, Key}, Val} = binary_to_term(Data),
-    R = case redis_backend:sadd(Bucket, Key, "_", Val, State#state.redis_state) of
-        {ok, _} ->
-            ok;
-        {error, Reason, _} ->
-            {error, Reason}
-    end,
+    {Key, Val, TTL} = binary_to_term(Data),
+    R = case redis_backend:handle_handoff_data({Key, Val, TTL}, State#state.redis_state) of
+            {ok, _} ->
+                ok;
+            {error, Reason, _} ->
+                {error, Reason}
+        end,
     {reply, R, State}.
 
-encode_handoff_item(_Key, Data = {_Meta, _File}) ->
+encode_handoff_item(_Key, Data = {_Key, _Val, _TTL}) ->
     term_to_binary(Data).
 
 is_empty(State) ->
@@ -244,6 +244,14 @@ is_empty(State) ->
 delete(State) ->
     {ok, State}.
 
+handle_coverage({transaction_with_value, CommandList}, _KeySpaces, {_, RefId, _}, State) ->
+    Result = case redis_backend:transaction_with_value(CommandList, State#state.redis_state) of
+                 {ok, Value, _} ->
+                     {ok, Value};
+                 Error ->
+                     Error
+             end,
+    {reply, {RefId, Result}, State};
 handle_coverage(_Req, _KeySpaces, _Sender, State) ->
     {stop, not_implemented, State}.
 

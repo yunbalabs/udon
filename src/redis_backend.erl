@@ -47,7 +47,8 @@
     fold_objects/4,
     is_empty/1,
     status/1,
-    callback/3, handle_handoff_command/3, sadd/5, srem/5, transaction/2, command/2, transaction_with_value/2, smembers/4, del/3, listen_port/1,
+    callback/3, handle_handoff_command/3, handle_handoff_data/2,
+    sadd/5, srem/5, transaction/2, command/2, transaction_with_value/2, smembers/4, del/3, listen_port/1,
     all_keys/1, all_values/2, get_combined_key/1]).
 
 -export([data_size/1]).
@@ -360,9 +361,9 @@ handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender,
     #state{ redis_context = Context } = State) ->
 
     FoldFun = fun(Key, AccIn) ->
+        {ok, TTL} = hierdis:command(Context, ["TTL", Key]),
         {ok, Val} = hierdis:command(Context, ["SMEMBERS", Key]),
-        [Bucket, Key1] = binary:split(Key, <<",">>),
-        VisitFun(Key, {{Bucket, Key1}, Val}, AccIn)
+        VisitFun(Key, {Key, Val, TTL}, AccIn)
         end,
 
     case hierdis:command(Context, [<<"KEYS">>, <<"*">>]) of
@@ -372,6 +373,24 @@ handle_handoff_command(?FOLD_REQ{foldfun=VisitFun, acc0=Acc0}, _Sender,
         {error, Reason} ->
             {error, Reason, State}
     end.
+
+handle_handoff_data({Key, Val, TTL}, #state{redis_context = Context} = State) ->
+    case hierdis:command(Context, [<<"SADD">>, Key | Val]) of
+        {ok, _Response} ->
+            handle_ttl({Key, TTL}, State);
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+handle_ttl({Key, TTL}, #state{redis_context = Context} = State) when TTL > 0 ->
+    case hierdis:command(Context, [<<"EXPIRE">>, Key, integer_to_binary(TTL)]) of
+        {ok, _Response} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+handle_ttl({_Key, _TTL}, State) ->
+    {ok, State}.
 
 %% @doc Fold over all the buckets
 -spec fold_buckets(riak_kv_backend:fold_buckets_fun(), any(), [], state()) -> {ok, any()} | {async, fun()}.

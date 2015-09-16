@@ -21,13 +21,17 @@ start_link() ->
 
 init(_Args) ->
     VMaster = { udon_vnode_master,
-                  {riak_core_vnode_master, start_link, [udon_vnode]},
-                  permanent, 5000, worker, [riak_core_vnode_master]},
+        {riak_core_vnode_master, start_link, [udon_vnode]},
+        permanent, 5000, worker, [riak_core_vnode_master]},
+
+    CoverageFSMs = {udon_coverage_fsm_sup,
+        {udon_coverage_fsm_sup, start_link, []},
+        permanent, infinity, supervisor, [udon_coverage_fsm_sup]},
 
     OpFSMs = {udon_op_fsm_sup,
-              {udon_op_fsm_sup, start_link, []},
-              permanent, infinity, supervisor, [udon_op_fsm_sup]},
+        {udon_op_fsm_sup, start_link, []},
+        permanent, infinity, supervisor, [udon_op_fsm_sup]},
 
     { ok,
         { {one_for_one, 5, 10},
-          [VMaster, OpFSMs]}}.
+            [VMaster, CoverageFSMs, OpFSMs]}}.
