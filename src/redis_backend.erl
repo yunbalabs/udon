@@ -119,7 +119,7 @@ start(Partition, _Config) ->
                                 {ok, RedisSocket, ListenPort} ->
                                     case hierdis:connect_unix(RedisSocket) of
                                         {ok, RedisContext} ->
-                                            case wait_for_redis_loaded(RedisContext, 100, 6000) of
+                                            case wait_for_redis_loaded(RedisContext, 100, 3000) of
                                                 ok ->
                                                     Result = {ok, #state{
                                                         redis_context=RedisContext,
