@@ -13,3 +13,6 @@ dev/*
 .idea
 priv
 udon.iml
+c_src/redis/
+test/logs/
+test/*.beam
