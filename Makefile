@@ -18,6 +18,14 @@ distclean: clean devclean relclean
 rel: all
 	$(REBAR) generate
 
+test:compile
+	rm -f /tmp/udon_ct/redis.sock.*
+	rm -rf /tmp/udon_ct/
+	mkdir -p /tmp/udon_ct/data
+	cp -r priv/ /tmp/udon_ct/
+	cp riak_kv_redis_backend.redis.config /tmp/udon_ct/priv/
+	ERL_AFLAGS="-config $(PWD)/rel/files/app.test" $(REBAR) compile -v ct skip_deps=true
+
 relclean:
 	rm -rf rel/udon
 
