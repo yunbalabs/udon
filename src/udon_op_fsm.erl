@@ -3,7 +3,7 @@
 -include("udon.hrl").
 
 %% API
--export([start_link/8, op/5]).
+-export([start_link/8, op/6]).
 
 %% Callbacks
 -export([init/1, code_change/4, handle_event/3, handle_info/3,
@@ -43,9 +43,9 @@
 start_link(EnableForward, ReqID, From, Op, Key, N, W, Timeout) ->
     gen_fsm:start_link(?MODULE, [EnableForward, ReqID, From, Op, Key, N, W, Timeout], []).
 
-op(N, W, Op, Key, Timeout) ->
+op(N, W, Op, Key, Timeout, EnableForward) ->
     ReqID = reqid(),
-    case sidejob_supervisor:start_child(udon_op_fsm_sj, gen_fsm, start_link, [udon_op_fsm, [true, ReqID, self(), Op, Key, N, W, Timeout], []]) of %%FIXME EnableForward
+    case sidejob_supervisor:start_child(udon_op_fsm_sj, gen_fsm, start_link, [udon_op_fsm, [EnableForward, ReqID, self(), Op, Key, N, W, Timeout], []]) of
         {error, overload} ->
             {error, overload};
         {ok, _Pid} ->

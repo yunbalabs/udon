@@ -9,7 +9,7 @@
 -module(udon_coverage_fsm).
 -author("zy").
 
--export([start_link/4, start/2]).
+-export([start/2]).
 -export([init/2, process_results/2, finish/2]).
 
 -behaviour(riak_core_coverage_fsm).
@@ -18,13 +18,14 @@
 
 %% API
 
-start_link(ReqId, From, Request, Timeout) ->
-  riak_core_coverage_fsm:start_link(?MODULE, {pid, ReqId, From}, [ReqId, From, Request, Timeout]).
-
 start(Request, Timeout) ->
   ReqId = reqid(),
-  {ok, _} = udon_coverage_fsm_sup:start_fsm([ReqId, self(), Request, Timeout]),
-  {ok, ReqId}.
+  case sidejob_supervisor:start_child(udon_coverage_fsm_sj, riak_core_coverage_fsm, start_link, [udon_coverage_fsm, {pid, ReqId, self()}, [ReqId, self(), Request, Timeout]]) of
+    {error, overload} ->
+      {error, overload};
+    {ok, _Pid} ->
+      {ok, ReqId}
+  end.
 
 %% riak_core_coverage_fsm API
 
