@@ -16,6 +16,8 @@
 
 -record(state, {req_id, from, request, accum=[]}).
 
+-compile([{parse_transform, lager_transform}]).
+
 %% API
 
 start(Request, Timeout) ->
