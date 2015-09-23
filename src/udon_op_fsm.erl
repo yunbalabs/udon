@@ -45,8 +45,12 @@ start_link(EnableForward, ReqID, From, Op, Key, N, W, Timeout) ->
 
 op(N, W, Op, Key, Timeout) ->
     ReqID = reqid(),
-    udon_op_fsm_sup:start_write_fsm([ReqID, self(), Op, Key, N, W, Timeout]),
-    {ok, ReqID}.
+    case sidejob_supervisor:start_child(udon_op_fsm_sj, gen_fsm, start_link, [udon_op_fsm, [true, ReqID, self(), Op, Key, N, W, Timeout], []]) of %%FIXME EnableForward
+        {error, overload} ->
+            {error, overload};
+        {ok, _Pid} ->
+            {ok, ReqID}
+    end.
 
 %%%===================================================================
 %%% States
