@@ -90,9 +90,10 @@ Benchmarking
 3. Copy basho_bench_driver_eredis.erl to the src directory.
 4. Copy basho_bench_eredis.config to the examples directory. Change the udon_instances in the deps/udon_client/src/udon_client_app.erl.
 5. Compile and run:
-```
-./basho_bench examples/basho_bench_eredis.config
-```
+
+    ```
+    ./basho_bench examples/basho_bench_eredis.config
+    ```
 6. View the result `tests/current/summary.csv`.
 
 Todo
