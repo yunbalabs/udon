@@ -83,6 +83,18 @@ stat_appkey_offline stat,5562d79527302bb3158937d7_1 5562d79527302bb3158937d7 244
 stat_appkey stat,5562d79527302bb3158937d7 active 2015-09-08-16-54-07 d 3
 ```
 
+Benchmarking
+======
+1. Download [basho_bench](https://github.com/basho/basho_bench).
+2. Add [udon_client](https://github.com/yunbalabs/udon_client) to the basho_bench's deps.
+3. Copy basho_bench_driver_eredis.erl to the src directory.
+4. Copy basho_bench_eredis.config to the examples directory. Change the udon_instances in the deps/udon_client/src/udon_client_app.erl.
+5. Compile and run:
+```
+./basho_bench examples/basho_bench_eredis.config
+```
+6. View the result `tests/current/summary.csv`.
+
 Todo
 ====
  * Tidy source codes
