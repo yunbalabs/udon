@@ -48,12 +48,12 @@ optional arguments:
 
 Supported Commands
 ======
-### SET key value
+### SET key value (For testing purposes only)
 ```
 set 1 1
 ```
 
-### GET key
+### GET key (For testing purposes only)
 ```
 get 1
 ```
