@@ -25,13 +25,13 @@ $ ./rel/udon/bin/udon start
 Play with redis-cli
 ```
 $ redis-cli -p 6380
-127.0.0.1:6380> SADD 1,1 1
+127.0.0.1:6380> SADD 1 1
 (integer) 1
-127.0.0.1:6380> SMEMBERS 1,1
+127.0.0.1:6380> SMEMBERS 1
 1) "1"
-127.0.0.1:6380> SREM 1,1 1
+127.0.0.1:6380> SREM 1 1
 (integer) 1
-127.0.0.1:6380> SMEMBERS 1,1
+127.0.0.1:6380> SMEMBERS 1
 (empty list or set)
 ```
 
