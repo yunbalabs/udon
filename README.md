@@ -93,7 +93,39 @@ stat_appkey_offline stat,5562d79527302bb3158937d7_1 5562d79527302bb3158937d7 244
 stat_appkey stat,5562d79527302bb3158937d7 active 2015-09-08-16-54-07 d 3
 ```
 
-Benchmarking
+Benchmark
+======
+## redis
+localhost:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000
+SET: 94607.38 requests per second
+GET: 98814.23 requests per second
+```
+
+remote:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -h abj-redisstat-1
+SET: 40899.80 requests per second
+GET: 35385.70 requests per second
+```
+
+## udon
+localhost:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380
+SET: 15928.64 requests per second
+GET: 16894.75 requests per second
+```
+
+remote:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1
+SET: 16946.28 requests per second
+GET: 16977.93 requests per second
+```
+
+Benchmarking with basho_bench
 ======
 1. Download [basho_bench](https://github.com/basho/basho_bench).
 2. Add [udon_client](https://github.com/yunbalabs/udon_client) to the basho_bench's deps.
