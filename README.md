@@ -105,24 +105,31 @@ GET: 98814.23 requests per second
 
 remote:
 ```
-redis-benchmark -t set,get -q -n 100000 -r 100000 -h abj-redisstat-1
-SET: 40899.80 requests per second
-GET: 35385.70 requests per second
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6379 -h abj-redisstat-1 -c 400
+SET: 50581.69 requests per second
+GET: 44742.73 requests per second
 ```
 
 ## udon
 localhost:
 ```
-redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380
-SET: 15928.64 requests per second
-GET: 16894.75 requests per second
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -c 400
+SET: 17497.81 requests per second
+GET: 17047.39 requests per second
 ```
 
-remote:
+remote(single):
 ```
-redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1
-SET: 16946.28 requests per second
-GET: 16977.93 requests per second
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1 -c 400
+SET: 20181.63 requests per second
+GET: 20149.10 requests per second
+```
+
+remote(two):
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1 -c 400
+SET: 25419.42 requests per second
+GET: 24384.30 requests per second
 ```
 
 Benchmarking with basho_bench
