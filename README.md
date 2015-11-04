@@ -48,6 +48,16 @@ optional arguments:
 
 Supported Commands
 ======
+### SET key value
+```
+set 1 1
+```
+
+### GET key
+```
+get 1
+```
+
 ### SADD bucket_name,key member
 ```
 sadd bucket_1,1 123
