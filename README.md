@@ -25,13 +25,13 @@ $ ./rel/udon/bin/udon start
 Play with redis-cli
 ```
 $ redis-cli -p 6380
-127.0.0.1:6380> SADD 1,1 1
+127.0.0.1:6380> SADD 1 1
 (integer) 1
-127.0.0.1:6380> SMEMBERS 1,1
+127.0.0.1:6380> SMEMBERS 1
 1) "1"
-127.0.0.1:6380> SREM 1,1 1
+127.0.0.1:6380> SREM 1 1
 (integer) 1
-127.0.0.1:6380> SMEMBERS 1,1
+127.0.0.1:6380> SMEMBERS 1
 (empty list or set)
 ```
 
@@ -48,6 +48,16 @@ optional arguments:
 
 Supported Commands
 ======
+### SET key value (For testing purposes only)
+```
+set 1 1
+```
+
+### GET key (For testing purposes only)
+```
+get 1
+```
+
 ### SADD bucket_name,key member
 ```
 sadd bucket_1,1 123
@@ -83,7 +93,39 @@ stat_appkey_offline stat,5562d79527302bb3158937d7_1 5562d79527302bb3158937d7 244
 stat_appkey stat,5562d79527302bb3158937d7 active 2015-09-08-16-54-07 d 3
 ```
 
-Benchmarking
+Benchmark
+======
+## redis
+localhost:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000
+SET: 94607.38 requests per second
+GET: 98814.23 requests per second
+```
+
+remote:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6379 -h abj-redisstat-1 -c 400
+SET: 50581.69 requests per second
+GET: 44742.73 requests per second
+```
+
+## udon
+localhost:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -c 400
+SET: 17497.81 requests per second
+GET: 17047.39 requests per second
+```
+
+remote:
+```
+redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1 -c 400
+SET: 26164.31 requests per second
+GET: 26867.28 requests per second
+```
+
+Benchmarking with basho_bench
 ======
 1. Download [basho_bench](https://github.com/basho/basho_bench).
 2. Add [udon_client](https://github.com/yunbalabs/udon_client) to the basho_bench's deps.
