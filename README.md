@@ -118,18 +118,11 @@ SET: 17497.81 requests per second
 GET: 17047.39 requests per second
 ```
 
-remote(single):
+remote:
 ```
 redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1 -c 400
-SET: 20181.63 requests per second
-GET: 20149.10 requests per second
-```
-
-remote(two):
-```
-redis-benchmark -t set,get -q -n 100000 -r 100000 -p 6380 -h abj-redisstat-1 -c 400
-SET: 25419.42 requests per second
-GET: 24384.30 requests per second
+SET: 26164.31 requests per second
+GET: 26867.28 requests per second
 ```
 
 Benchmarking with basho_bench
